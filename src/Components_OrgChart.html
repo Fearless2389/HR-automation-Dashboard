@@ -1,0 +1,18 @@
+<!-- Org Chart -->
+<section class="card" x-show="snapshot && snapshot.orgNodes">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <div class="card-title" style="margin-bottom: 0;">Organization Chart</div>
+      <div class="text-xs text-zinc-500 mt-1">
+        <span x-show="snapshot.orgNodes" x-text="(snapshot.orgNodes || []).length + ' employees · rebuilt on Reporting Manager change'"></span>
+      </div>
+    </div>
+    <div class="text-xs text-zinc-400">Auto-refreshed</div>
+  </div>
+
+  <div id="orgChartEl" class="overflow-auto" style="min-height: 320px; max-height: 720px;"></div>
+
+  <div x-show="!snapshot.orgNodes || snapshot.orgNodes.length === 0" class="text-zinc-500 text-sm py-12 text-center">
+    No employees to display.
+  </div>
+</section>

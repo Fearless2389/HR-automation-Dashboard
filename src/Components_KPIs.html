@@ -1,0 +1,13 @@
+<!-- KPI strip -->
+<section>
+  <div class="text-xs font-semibold text-zinc-500 tracking-widest mb-3">KEY METRICS</div>
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+    <template x-for="kpi in (snapshot && snapshot.kpis) || []" :key="kpi.label">
+      <div class="kpi">
+        <div class="kpi-label" x-text="kpi.label"></div>
+        <div class="kpi-value" :class="toneClass(kpi.tone)" x-text="kpi.value"></div>
+        <div class="kpi-hint" x-text="kpi.hint || ''"></div>
+      </div>
+    </template>
+  </div>
+</section>

@@ -1,0 +1,33 @@
+# clasp / Apps Script — keep auth tokens and project IDs out of the repo
+.clasprc.json
+.clasp.json
+
+# Python build artifacts (build_sop.py)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+*.egg-info/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code workspace
+.claude/
+
+# Backups
+*.bak
+*~

@@ -1,0 +1,60 @@
+<!-- HR Health Score -->
+<section class="card" x-show="snapshot && snapshot.health">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <div class="card-title" style="margin-bottom: 0;">HR Health Score</div>
+      <div class="text-xs text-zinc-500 mt-1">4-pillar additive composite (formula in SOP)</div>
+    </div>
+    <div class="text-xs text-zinc-500">As of <span x-text="snapshot && snapshot.generatedAtLabel"></span></div>
+  </div>
+
+  <div class="flex items-center gap-10 flex-wrap">
+    <!-- Donut -->
+    <div class="flex flex-col items-center">
+      <div class="donut" :style="`background: conic-gradient(${healthBand(snapshot.health.total).color} 0% ${snapshot.health.total}%, #F4F4F5 ${snapshot.health.total}% 100%);`">
+        <div class="donut-label" :class="healthBand(snapshot.health.total).cls" x-text="snapshot.health.total"></div>
+      </div>
+      <div class="mt-3 text-xs">
+        <span class="badge" :class="{ 'badge-ok': healthBand(snapshot.health.total).label === 'Green', 'badge-warning': healthBand(snapshot.health.total).label === 'Amber', 'badge-critical': healthBand(snapshot.health.total).label === 'Red' }"
+              x-text="healthBand(snapshot.health.total).label"></span>
+      </div>
+    </div>
+
+    <!-- 4-pillar breakdown -->
+    <div class="flex-1 min-w-[320px] space-y-4">
+      <template x-for="(label, key) in { stability: 'Stability', alertLoad: 'Alert Load', riskPosture: 'Risk Posture', productivity: 'Productivity' }" :key="key">
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span class="font-medium text-zinc-700" x-text="label"></span>
+            <span class="text-zinc-500 text-xs">
+              <span class="font-semibold text-zinc-900" x-text="snapshot.health.pillars[key]"></span>
+              <span> / 25</span>
+            </span>
+          </div>
+          <div class="pillar-bar">
+            <div :style="`width: ${pillarPct(snapshot.health.pillars[key], 25)}%; background: ${healthBand(snapshot.health.total).color}`"></div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <div class="mt-6 pt-4 border-t border-zinc-100 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+    <div>
+      <div class="text-zinc-500">Quarterly Attrition</div>
+      <div class="font-semibold text-zinc-900" x-text="snapshot.health.inputs ? (snapshot.health.inputs.quarterlyAttrition * 100).toFixed(1) + '%' : '—'"></div>
+    </div>
+    <div>
+      <div class="text-zinc-500">Critical Alerts</div>
+      <div class="font-semibold text-zinc-900" x-text="snapshot.health.inputs && snapshot.health.inputs.criticalAlerts"></div>
+    </div>
+    <div>
+      <div class="text-zinc-500">Risky Window</div>
+      <div class="font-semibold text-zinc-900" x-text="snapshot.health.inputs && snapshot.health.inputs.riskyEmployees + ' / ' + snapshot.health.inputs.headcount"></div>
+    </div>
+    <div>
+      <div class="text-zinc-500">Avg Productivity</div>
+      <div class="font-semibold text-zinc-900" x-text="snapshot.health.inputs ? (snapshot.health.inputs.avgProductivity * 100).toFixed(0) + '%' : '—'"></div>
+    </div>
+  </div>
+</section>

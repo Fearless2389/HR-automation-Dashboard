@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HR Dashboard — Not Authorized</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    html, body { font-family: 'Inter', system-ui, sans-serif; }
+  </style>
+</head>
+<body class="bg-zinc-50 min-h-screen flex items-center justify-center px-4">
+  <div class="max-w-md w-full bg-white rounded-2xl border border-zinc-200 shadow-sm p-8 text-center">
+    <div class="w-14 h-14 mx-auto rounded-full bg-rose-100 flex items-center justify-center text-rose-600 text-2xl mb-4">🔒</div>
+    <h1 class="text-xl font-semibold text-zinc-900 mb-2">Not Authorized</h1>
+    <p class="text-sm text-zinc-600 mb-6">
+      Your Google account is not on the HR Automation allowlist. If you believe this is an error,
+      please contact your HR Administrator and request access.
+    </p>
+    <div class="bg-zinc-50 rounded-lg border border-zinc-200 p-3 text-left text-xs text-zinc-500">
+      <span class="font-semibold text-zinc-700">What HR Admin needs to do:</span><br />
+      Add your Google account email to the <code class="bg-zinc-200 px-1 rounded">_Config</code> tab, under
+      <code class="bg-zinc-200 px-1 rounded">allowlist · emails</code>.
+    </div>
+    <p class="text-xs text-zinc-400 mt-6">Techolution HR Automation</p>
+  </div>
+</body>
+</html>

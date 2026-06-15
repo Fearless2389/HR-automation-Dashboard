@@ -1,0 +1,61 @@
+<!-- Alerts: tabs (Critical / Warning / LWD / Probation) -->
+<section class="card" x-show="snapshot && snapshot.alerts">
+  <div class="flex items-center justify-between mb-3">
+    <div class="card-title" style="margin-bottom: 0;">Active Alerts</div>
+    <div class="text-xs text-zinc-500">
+      <span class="font-semibold text-rose-600" x-text="(snapshot.alerts.critical || []).length"></span> critical ·
+      <span class="font-semibold text-amber-600" x-text="(snapshot.alerts.warning || []).length"></span> warning
+    </div>
+  </div>
+
+  <div class="flex items-center gap-1 border-b border-zinc-200 mb-3">
+    <div class="tab" :class="alertTab === 'critical' ? 'tab-active' : ''" @click="alertTab = 'critical'">
+      Critical <span class="text-zinc-400" x-text="'(' + (snapshot.alerts.critical || []).length + ')'"></span>
+    </div>
+    <div class="tab" :class="alertTab === 'warning' ? 'tab-active' : ''" @click="alertTab = 'warning'">
+      Warning <span class="text-zinc-400" x-text="'(' + (snapshot.alerts.warning || []).length + ')'"></span>
+    </div>
+    <div class="tab" :class="alertTab === 'lwd' ? 'tab-active' : ''" @click="alertTab = 'lwd'">
+      LWD <span class="text-zinc-400" x-text="'(' + (snapshot.alerts.lwd || []).length + ')'"></span>
+    </div>
+    <div class="tab" :class="alertTab === 'probation' ? 'tab-active' : ''" @click="alertTab = 'probation'">
+      Probation <span class="text-zinc-400" x-text="'(' + (snapshot.alerts.probation || []).length + ')'"></span>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="data" x-show="(snapshot.alerts[alertTab] || []).length > 0">
+      <thead>
+        <tr>
+          <th>Emp ID</th>
+          <th>Name</th>
+          <th>Dept</th>
+          <th>Region</th>
+          <th>Type</th>
+          <th>Detail</th>
+          <th>Severity</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="a in (snapshot.alerts[alertTab] || [])" :key="a.empId + '-' + a.kind">
+          <tr>
+            <td x-text="a.empId" class="font-mono text-xs text-zinc-500"></td>
+            <td x-text="a.name" class="font-medium"></td>
+            <td x-text="a.dept" class="text-zinc-600"></td>
+            <td x-text="a.region" class="text-zinc-600"></td>
+            <td x-text="a.kind" class="text-zinc-600"></td>
+            <td x-text="a.message"></td>
+            <td>
+              <span :class="severityBadgeClass(a.severity)" x-text="a.severity"></span>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <div x-show="(snapshot.alerts[alertTab] || []).length === 0" class="text-zinc-500 text-sm py-8 text-center">
+      <span x-show="alertTab === 'critical'">No critical alerts. Healthy.</span>
+      <span x-show="alertTab !== 'critical'">No active alerts in this category.</span>
+    </div>
+  </div>
+</section>

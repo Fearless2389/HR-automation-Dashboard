@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Techolution HR Dashboard</title>
+  <!-- Tailwind v2 STATIC CSS — no runtime JIT, no eval, CSP-safe. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" />
+  <!-- Google Charts loader — no eval -->
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+  <?!= include('Styles') ?>
+</head>
+<body class="bg-gray-50 text-gray-900 antialiased min-h-screen">
+
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+    <div class="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold mr-3" style="background:#4F46E5;">T</div>
+        <div>
+          <h1 class="text-base font-semibold tracking-tight">Techolution HR Automation</h1>
+          <p class="text-xs text-gray-500">India &middot; US workforce &mdash; live dashboard</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-6 text-sm">
+        <div id="system-health" class="flex items-center gap-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-gray-300" id="system-dot"></span>
+          <span class="text-gray-600 text-xs" id="system-label">Loading&hellip;</span>
+        </div>
+        <div class="text-xs text-gray-500">
+          Last updated <span id="last-updated" class="font-medium text-gray-700">never</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-700" id="user-initial">?</div>
+          <span class="text-xs text-gray-600" id="user-email"></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Tab nav (page sections) -->
+  <nav id="tab-nav" class="hidden bg-white border-b border-gray-200">
+    <div class="mx-auto max-w-7xl px-6 flex items-center gap-1">
+      <button class="tab-link tab-link-active" data-tab="overview">Overview</button>
+      <button class="tab-link" data-tab="alerts">Alerts <span class="count-pill" id="tab-alerts-count">0</span></button>
+      <button class="tab-link" data-tab="org">Org View</button>
+      <button class="tab-link" data-tab="drilldown">Drill-Down</button>
+    </div>
+  </nav>
+
+  <main class="mx-auto max-w-7xl px-6 py-8 space-y-6">
+
+    <div id="loading" class="flex items-center justify-center py-24">
+      <div class="text-gray-500 text-sm">Loading dashboard&hellip;</div>
+    </div>
+
+    <div id="error-banner" class="hidden bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 text-sm">
+      <strong>Server error:</strong> <span id="error-message"></span>
+    </div>
+
+    <!-- OVERVIEW TAB -->
+    <div data-tab-content="overview" class="tab-panel space-y-8 hidden">
+      <section id="kpis-section">
+        <div class="text-xs font-semibold text-gray-500 tracking-widest mb-3">KEY METRICS</div>
+        <div id="kpis-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+      </section>
+
+      <section id="health-section" class="card">
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <div class="card-title" style="margin-bottom:0;">HR Health Score</div>
+            <div class="text-xs text-gray-500 mt-1">4-pillar additive composite (formula in SOP)</div>
+          </div>
+          <div class="text-xs text-gray-500">As of <span id="health-asof"></span></div>
+        </div>
+        <div class="flex items-center gap-10 flex-wrap">
+          <div class="flex flex-col items-center">
+            <div id="health-donut" class="donut">
+              <div class="donut-label" id="health-total">&mdash;</div>
+            </div>
+            <div class="mt-3 text-xs">
+              <span class="badge" id="health-band-badge">&mdash;</span>
+            </div>
+          </div>
+          <div class="flex-1 min-w-0" style="min-width:320px;" id="health-pillars"></div>
+        </div>
+        <div class="mt-6 pt-4 border-t border-gray-100 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs" id="health-inputs"></div>
+      </section>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <section id="dept-section" class="card">
+          <div class="card-title">Department Breakdown</div>
+          <div id="dept-list" class="space-y-3"></div>
+        </section>
+        <section id="attr-section" class="card">
+          <div class="card-title">Quarterly Attrition Trend</div>
+          <div id="attr-list" class="space-y-3"></div>
+          <div class="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
+            Computed from <code class="bg-gray-100 px-1 rounded">Offboarded Resources</code> tab.
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ALERTS TAB -->
+    <div data-tab-content="alerts" class="tab-panel hidden">
+      <section id="alerts-section" class="card">
+        <div class="flex items-center justify-between mb-3">
+          <div class="card-title" style="margin-bottom:0;">Active Alerts</div>
+          <div class="text-xs text-gray-500" id="alerts-summary"></div>
+        </div>
+        <div class="flex items-center gap-1 border-b border-gray-200 mb-3" id="alerts-tabs"></div>
+        <div class="overflow-x-auto" id="alerts-table-wrap"></div>
+      </section>
+    </div>
+
+    <!-- ORG VIEW TAB -->
+    <div data-tab-content="org" class="tab-panel hidden">
+      <section id="org-section" class="card">
+        <div class="flex items-start justify-between mb-4 flex-wrap gap-3">
+          <div>
+            <div class="card-title" style="margin-bottom:0;">Org View</div>
+            <div class="text-xs text-gray-500 mt-1" id="org-meta"></div>
+          </div>
+          <div class="flex flex-col items-end gap-2">
+            <div class="text-xs text-gray-400">Grouped by reporting manager</div>
+            <div class="org-legend">
+              <span class="org-legend-item"><span class="org-legend-swatch swatch-confirmed"></span>Confirmed</span>
+              <span class="org-legend-item"><span class="org-legend-swatch swatch-probation"></span>Under Probation</span>
+              <span class="org-legend-item"><span class="org-legend-swatch swatch-intern"></span>Intern</span>
+            </div>
+          </div>
+        </div>
+        <div id="org-groups-grid" class="org-grid"></div>
+      </section>
+    </div>
+
+    <!-- DRILL-DOWN TAB -->
+    <div data-tab-content="drilldown" class="tab-panel hidden">
+      <section id="drilldown-section" class="card">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div>
+            <div class="card-title" style="margin-bottom:0;">Drill-Down</div>
+            <div class="text-xs text-gray-500 mt-1"><span id="drilldown-count" class="font-semibold text-gray-900">0</span> employee(s) matching filters</div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <select class="filter-select" id="filter-region" data-filter="region"></select>
+            <select class="filter-select" id="filter-dept"   data-filter="dept"></select>
+            <select class="filter-select" id="filter-rm"     data-filter="rm"></select>
+            <select class="filter-select" id="filter-status" data-filter="status"></select>
+          </div>
+        </div>
+        <div class="overflow-x-auto" id="drilldown-table-wrap"></div>
+      </section>
+    </div>
+
+    <footer class="pt-8 pb-12 text-center text-xs text-gray-400">
+      <p>Techolution HR Automation &middot; runs on Google Sheets + Apps Script</p>
+      <p>Auto-refreshes every <span id="poll-interval">5</span>s &middot; paused when tab is hidden</p>
+    </footer>
+  </main>
+
+  <!-- Bootstrap data: injected here (top-level template) because include()'d files
+       do NOT have their scriptlets evaluated. `<` is escaped to <so the HTML
+       parser can't see a stray </script> inside the JSON. -->
+  <script type="application/json" id="__bootstrap-data__"><?!= JSON.stringify(bootstrapSnapshot || null).replace(/</g, '\\u003c') ?></script>
+  <script type="application/json" id="__user-data__"><?!= JSON.stringify(user || {email:''}).replace(/</g, '\\u003c') ?></script>
+
+  <?!= include('Scripts') ?>
+</body>
+</html>

@@ -1,0 +1,504 @@
+<script>
+  // ─────────────────────────────────────────────────────────────────────
+  // Vanilla JS dashboard — no Alpine, no eval, CSP-safe.
+  // Bootstrap JSON is injected into <script type="application/json">
+  // tags in WebApp.html (because include()'d files don't evaluate scriptlets).
+  // ─────────────────────────────────────────────────────────────────────
+
+  function safeParse_(text, fallback) {
+    try { return JSON.parse(text); } catch (e) { return fallback; }
+  }
+
+  var __BOOTSTRAP__ = (function () {
+    var el = document.getElementById('__bootstrap-data__');
+    return safeParse_(el ? el.textContent : 'null', null);
+  })();
+  var __USER__ = (function () {
+    var el = document.getElementById('__user-data__');
+    return safeParse_(el ? el.textContent : '{"email":""}', { email: '' });
+  })();
+
+  var POLL_INTERVAL_MS = 5000;
+  var ALERT_TABS = ['critical', 'warning', 'lwd', 'probation'];
+  var PAGE_TABS = ['overview', 'alerts', 'org', 'drilldown'];
+
+  var state = {
+    snapshot: (__BOOTSTRAP__ && !__BOOTSTRAP__.error) ? __BOOTSTRAP__ : null,
+    bootstrapError: (__BOOTSTRAP__ && __BOOTSTRAP__.error) ? __BOOTSTRAP__.error : null,
+    userEmail: (__USER__ && __USER__.email) || '',
+    activeTab: 'overview',
+    alertTab: 'critical',
+    drilldown: { region: 'All', dept: 'All', rm: 'All', status: 'All', rows: [], count: 0 },
+    lastUpdated: null,
+    pollTimer: null
+  };
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Boot
+  // ──────────────────────────────────────────────────────────────────────
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('user-email').textContent = state.userEmail;
+    document.getElementById('user-initial').textContent = (state.userEmail || '?').charAt(0).toUpperCase();
+    document.getElementById('poll-interval').textContent = String(POLL_INTERVAL_MS / 1000);
+
+    if (state.bootstrapError) {
+      showError('Bootstrap snapshot failed: ' + state.bootstrapError);
+    }
+
+    if (state.snapshot) {
+      state.lastUpdated = new Date();
+      renderAll();
+      refreshDrilldown();
+    }
+
+    // Wire up filter dropdowns
+    document.querySelectorAll('[data-filter]').forEach(function (sel) {
+      sel.addEventListener('change', onFilterChange);
+    });
+
+    // Wire up page-level tabs
+    document.querySelectorAll('.tab-link[data-tab]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        activatePageTab(btn.getAttribute('data-tab'));
+      });
+    });
+
+    // Polling
+    startPolling();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Tick last-updated label
+    setInterval(updateLastUpdatedLabel, 15000);
+
+    // Force an immediate poll if no bootstrap
+    if (!state.snapshot) setTimeout(refresh, 100);
+  });
+
+  function startPolling() {
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    state.pollTimer = setInterval(refresh, POLL_INTERVAL_MS);
+  }
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+    } else {
+      refresh();
+      startPolling();
+    }
+  }
+  function refresh() {
+    google.script.run
+      .withSuccessHandler(function (snap) {
+        if (!snap) return;
+        if (snap.error) { showError(snap.error); return; }
+        hideError();
+        state.snapshot = snap;
+        state.lastUpdated = new Date();
+        renderAll();
+      })
+      .withFailureHandler(function (err) {
+        console.error('api_snapshot poll failed:', err && err.message ? err.message : err);
+      })
+      .api_snapshot();
+  }
+
+  function showError(msg) {
+    var bn = document.getElementById('error-banner');
+    bn.classList.remove('hidden');
+    document.getElementById('error-message').textContent = msg;
+  }
+  function hideError() {
+    document.getElementById('error-banner').classList.add('hidden');
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Render orchestrator
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderAll() {
+    var s = state.snapshot;
+    if (!s) return;
+
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('tab-nav').classList.remove('hidden');
+    activatePageTab(state.activeTab);
+
+    renderSystemHealth(s);
+    renderKpis(s);
+    renderHealth(s);
+    renderAlerts(s);
+    renderDepartmentBreakdown(s);
+    renderAttritionTrend(s);
+    renderOrgGroups(s);
+    renderDrillDownFilters(s);
+    updateAlertsTabCount(s);
+    updateLastUpdatedLabel();
+  }
+
+  function activatePageTab(name) {
+    if (PAGE_TABS.indexOf(name) === -1) name = 'overview';
+    state.activeTab = name;
+    document.querySelectorAll('[data-tab-content]').forEach(function (panel) {
+      if (panel.getAttribute('data-tab-content') === name) panel.classList.remove('hidden');
+      else panel.classList.add('hidden');
+    });
+    document.querySelectorAll('.tab-link[data-tab]').forEach(function (btn) {
+      if (btn.getAttribute('data-tab') === name) btn.classList.add('tab-link-active');
+      else btn.classList.remove('tab-link-active');
+    });
+  }
+
+  function updateAlertsTabCount(s) {
+    var alerts = (s && s.alerts) || {};
+    var total = ((alerts.critical || []).length) + ((alerts.warning || []).length);
+    var el = document.getElementById('tab-alerts-count');
+    if (el) el.textContent = String(total);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // System health (header)
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderSystemHealth(s) {
+    var sh = s.systemHealth || {};
+    var ok = !!sh.ok && (!sh.issues || sh.issues.length === 0);
+    document.getElementById('system-dot').className = 'inline-block w-2 h-2 rounded-full ' + (ok ? 'bg-green-500' : 'bg-red-500');
+    document.getElementById('system-label').textContent = ok ? 'All systems OK' : ((sh.issues || []).length + ' issue(s)');
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // KPI strip
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderKpis(s) {
+    var html = (s.kpis || []).map(function (k) {
+      return '' +
+        '<div class="kpi">' +
+          '<div class="kpi-label">' + esc(k.label) + '</div>' +
+          '<div class="kpi-value tone-' + esc(k.tone || 'neutral') + '">' + esc(String(k.value)) + '</div>' +
+          '<div class="kpi-hint">' + esc(k.hint || '') + '</div>' +
+        '</div>';
+    }).join('');
+    document.getElementById('kpis-grid').innerHTML = html;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // HR Health Score
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderHealth(s) {
+    var h = s.health || {};
+    var total = typeof h.total === 'number' ? h.total : 0;
+    var band = healthBand(total);
+    var pillars = h.pillars || {};
+    var inputs = h.inputs || {};
+
+    document.getElementById('health-asof').textContent = s.generatedAtLabel || '';
+    document.getElementById('health-total').textContent = String(total);
+    document.getElementById('health-total').className = 'donut-label tone-' + band.toneClass;
+    document.getElementById('health-donut').style.background =
+      'conic-gradient(' + band.color + ' 0% ' + total + '%, #F4F4F5 ' + total + '% 100%)';
+
+    var badge = document.getElementById('health-band-badge');
+    badge.textContent = band.label;
+    badge.className = 'badge ' + band.badgeClass;
+
+    var labels = { stability: 'Stability', alertLoad: 'Alert Load', riskPosture: 'Risk Posture', productivity: 'Productivity' };
+    var pillarHtml = Object.keys(labels).map(function (key) {
+      var v = typeof pillars[key] === 'number' ? pillars[key] : 0;
+      var pct = Math.round((v / 25) * 100);
+      return '' +
+        '<div style="margin-bottom:12px;">' +
+          '<div class="flex justify-between text-sm mb-1">' +
+            '<span class="font-medium text-gray-700">' + esc(labels[key]) + '</span>' +
+            '<span class="text-gray-500 text-xs"><span class="font-semibold text-gray-900">' + esc(String(v)) + '</span> / 25</span>' +
+          '</div>' +
+          '<div class="pillar-bar"><div style="width:' + pct + '%; background:' + band.color + ';"></div></div>' +
+        '</div>';
+    }).join('');
+    document.getElementById('health-pillars').innerHTML = pillarHtml;
+
+    var qa = inputs.quarterlyAttrition;
+    var inputsHtml = '' +
+      '<div><div class="text-gray-500">Quarterly Attrition</div><div class="font-semibold text-gray-900">' + (typeof qa === 'number' ? (qa * 100).toFixed(1) + '%' : '—') + '</div></div>' +
+      '<div><div class="text-gray-500">Critical Alerts</div><div class="font-semibold text-gray-900">' + esc(String(inputs.criticalAlerts || 0)) + '</div></div>' +
+      '<div><div class="text-gray-500">Risky Window</div><div class="font-semibold text-gray-900">' + esc(String(inputs.riskyEmployees || 0)) + ' / ' + esc(String(inputs.headcount || 0)) + '</div></div>' +
+      '<div><div class="text-gray-500">Avg Productivity</div><div class="font-semibold text-gray-900">' + (typeof inputs.avgProductivity === 'number' ? (inputs.avgProductivity * 100).toFixed(0) + '%' : '—') + '</div></div>';
+    document.getElementById('health-inputs').innerHTML = inputsHtml;
+  }
+
+  function healthBand(score) {
+    if (score >= 80) return { label: 'Green', toneClass: 'good',    badgeClass: 'badge-ok',       color: '#059669' };
+    if (score >= 60) return { label: 'Amber', toneClass: 'warn',    badgeClass: 'badge-warning',  color: '#D97706' };
+    return                  { label: 'Red',   toneClass: 'danger',  badgeClass: 'badge-critical', color: '#DC2626' };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Alerts (tabbed)
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderAlerts(s) {
+    var alerts = s.alerts || { critical: [], warning: [], lwd: [], probation: [] };
+
+    // Tabs
+    var tabsEl = document.getElementById('alerts-tabs');
+    tabsEl.innerHTML = ALERT_TABS.map(function (key) {
+      var count = (alerts[key] || []).length;
+      var label = key.charAt(0).toUpperCase() + key.slice(1);
+      var active = key === state.alertTab ? 'tab-active' : '';
+      return '<div class="tab ' + active + '" data-tab="' + esc(key) + '">' + esc(label) +
+             ' <span class="text-gray-400">(' + count + ')</span></div>';
+    }).join('');
+    tabsEl.querySelectorAll('[data-tab]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        state.alertTab = el.getAttribute('data-tab');
+        renderAlerts(state.snapshot);
+      });
+    });
+
+    // Summary
+    document.getElementById('alerts-summary').innerHTML =
+      '<span class="font-semibold text-red-600">' + (alerts.critical || []).length + '</span> critical · ' +
+      '<span class="font-semibold text-yellow-600">' + (alerts.warning || []).length + '</span> warning';
+
+    // Table
+    var current = alerts[state.alertTab] || [];
+    var wrap = document.getElementById('alerts-table-wrap');
+    if (current.length === 0) {
+      wrap.innerHTML = '<div class="text-gray-500 text-sm py-8 text-center">' +
+        (state.alertTab === 'critical' ? 'No critical alerts. Healthy.' : 'No active alerts in this category.') +
+        '</div>';
+      return;
+    }
+    var rows = current.map(function (a) {
+      return '<tr>' +
+        '<td class="font-mono text-xs text-gray-500">' + esc(a.empId) + '</td>' +
+        '<td class="font-medium">' + esc(a.name) + '</td>' +
+        '<td class="text-gray-600">' + esc(a.dept) + '</td>' +
+        '<td class="text-gray-600">' + esc(a.region || '') + '</td>' +
+        '<td class="text-gray-600">' + esc(a.kind) + '</td>' +
+        '<td>' + esc(a.message) + '</td>' +
+        '<td><span class="' + severityBadgeClass(a.severity) + '">' + esc(a.severity) + '</span></td>' +
+        '</tr>';
+    }).join('');
+    wrap.innerHTML = '<table class="data">' +
+      '<thead><tr><th>Emp ID</th><th>Name</th><th>Dept</th><th>Region</th><th>Type</th><th>Detail</th><th>Severity</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  function severityBadgeClass(sev) {
+    if (sev === 'critical') return 'badge badge-critical';
+    if (sev === 'warning')  return 'badge badge-warning';
+    return 'badge badge-info';
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Department breakdown
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderDepartmentBreakdown(s) {
+    var depts = s.departmentBreakdown || [];
+    if (depts.length === 0) {
+      document.getElementById('dept-list').innerHTML =
+        '<div class="text-gray-500 text-sm py-6 text-center">No department data.</div>';
+      return;
+    }
+    var html = depts.map(function (d) {
+      var total = d.total || 0;
+      var conf = d.confirmed || 0, prob = d.probation || 0, intern = d.intern || 0;
+      var confPct = total ? (conf / total) * 100 : 0;
+      var probPct = total ? (prob / total) * 100 : 0;
+      var intPct = total ? (intern / total) * 100 : 0;
+      return '<div>' +
+        '<div class="flex justify-between text-sm mb-1">' +
+          '<span class="font-medium text-gray-700">' + esc(d.dept) + '</span>' +
+          '<span class="text-gray-500 text-xs"><span class="font-semibold text-gray-900">' + total + '</span> total' +
+            (conf > 0 ? ' &middot; <span class="text-green-600">' + conf + ' conf</span>' : '') +
+            (prob > 0 ? ' &middot; <span class="text-yellow-600">' + prob + ' prob</span>' : '') +
+            (intern > 0 ? ' &middot; <span class="text-indigo-600">' + intern + ' int</span>' : '') +
+          '</span>' +
+        '</div>' +
+        '<div class="flex h-2 w-full rounded-full overflow-hidden bg-gray-100">' +
+          '<div class="bg-green-500" style="width:' + confPct + '%"></div>' +
+          '<div class="bg-yellow-500" style="width:' + probPct + '%"></div>' +
+          '<div class="bg-indigo-500" style="width:' + intPct + '%"></div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    document.getElementById('dept-list').innerHTML = html;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Attrition trend
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderAttritionTrend(s) {
+    var trend = s.attritionTrend || [];
+    if (trend.length === 0) {
+      document.getElementById('attr-list').innerHTML =
+        '<div class="text-gray-500 text-sm py-6 text-center">No attrition data.</div>';
+      return;
+    }
+    var html = trend.map(function (q) {
+      var pctW = Math.min((q.rate || 0) * 400, 100);
+      var rateCls = q.rate > 0.10 ? 'text-red-600' : (q.rate > 0.05 ? 'text-yellow-600' : 'text-green-600');
+      var barCls = q.rate > 0.10 ? 'bg-red-500' : (q.rate > 0.05 ? 'bg-yellow-500' : 'bg-green-500');
+      return '<div>' +
+        '<div class="flex justify-between text-sm mb-1">' +
+          '<span class="font-medium text-gray-700">' + esc(q.quarter) + '</span>' +
+          '<span class="text-gray-500 text-xs"><span class="font-semibold text-gray-900">' + (q.count || 0) + ' exits</span> ' +
+          '<span class="ml-2 ' + rateCls + '">' + ((q.rate || 0) * 100).toFixed(2) + '%</span></span>' +
+        '</div>' +
+        '<div class="pillar-bar"><div class="' + barCls + '" style="width:' + pctW + '%"></div></div>' +
+      '</div>';
+    }).join('');
+    document.getElementById('attr-list').innerHTML = html;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Org View — grouped by Reporting Manager (card grid)
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderOrgGroups(s) {
+    var groups = (s && s.orgGroups) || [];
+    var el = document.getElementById('org-groups-grid');
+    if (!el) return;
+
+    var meta = document.getElementById('org-meta');
+    if (meta) {
+      var totalEmployees = groups.reduce(function (a, g) { return a + (g.count || 0); }, 0);
+      meta.textContent = groups.length + ' manager(s) · ' + totalEmployees + ' employee(s)';
+    }
+
+    if (!groups.length) {
+      el.innerHTML = '<div class="text-gray-500 text-sm py-8 text-center">No employees to group.</div>';
+      return;
+    }
+
+    var html = groups.map(function (g) {
+      var noMgr = g.manager === 'No Manager';
+      var pills = (g.reports || []).map(function (r) {
+        var pillCls = 'org-pill';
+        if (r.status === 'Under Probation') pillCls += ' org-pill-probation';
+        else if (r.status === 'Intern') pillCls += ' org-pill-intern';
+        var title = (r.dept || '') + (r.designation ? ' · ' + r.designation : '') +
+                    (r.status ? ' · ' + r.status : '');
+        return '<span class="' + pillCls + '" title="' + esc(title) + '">' + esc(r.name || r.empId || '') + '</span>';
+      }).join('');
+      return '<div class="org-group' + (noMgr ? ' org-group-no-mgr' : '') + '">' +
+        '<div class="org-group-header">' +
+          '<span>' + esc(g.manager) + '</span>' +
+          '<span class="dot">·</span>' +
+          '<span class="count">' + (g.count || 0) + '</span>' +
+        '</div>' +
+        '<div class="org-pills">' + pills + '</div>' +
+      '</div>';
+    }).join('');
+    el.innerHTML = html;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Drill-down
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderDrillDownFilters(s) {
+    var f = s.drilldownFilters || {};
+    setOptions('filter-region', f.regions || ['All']);
+    setOptions('filter-dept', f.departments || ['All']);
+    setOptions('filter-rm', f.reportingManagers || ['All']);
+    setOptions('filter-status', f.statuses || ['All']);
+  }
+
+  function setOptions(id, items) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    var current = sel.value || 'All';
+    sel.innerHTML = items.map(function (v) {
+      var selected = v === current ? ' selected' : '';
+      return '<option value="' + esc(v) + '"' + selected + '>' + esc(v) + '</option>';
+    }).join('');
+  }
+
+  function onFilterChange(e) {
+    var key = e.target.getAttribute('data-filter');
+    state.drilldown[key] = e.target.value;
+    refreshDrilldown();
+  }
+
+  function refreshDrilldown() {
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.drilldown.rows = (result && result.rows) || [];
+        state.drilldown.count = (result && result.count) || 0;
+        renderDrillDownTable();
+      })
+      .withFailureHandler(function (err) {
+        console.error('api_drilldown failed:', err && err.message ? err.message : err);
+      })
+      .api_drilldown({
+        region: state.drilldown.region,
+        dept: state.drilldown.dept,
+        rm: state.drilldown.rm,
+        status: state.drilldown.status
+      });
+  }
+
+  function renderDrillDownTable() {
+    document.getElementById('drilldown-count').textContent = String(state.drilldown.count);
+    var wrap = document.getElementById('drilldown-table-wrap');
+    if (!state.drilldown.rows.length) {
+      wrap.innerHTML = '<div class="text-gray-500 text-sm py-8 text-center">No employees match the current filters.</div>';
+      return;
+    }
+    var rows = state.drilldown.rows.map(function (e) {
+      var statusBadge = 'badge ' + (e.status === 'Confirmed' ? 'badge-ok' : e.status === 'Under Probation' ? 'badge-warning' : 'badge-info');
+      return '<tr>' +
+        '<td class="font-mono text-xs text-gray-500">' + esc(e.empId) + '</td>' +
+        '<td class="font-medium">' + esc(e.name) + '</td>' +
+        '<td class="text-gray-600">' + esc(e.region) + '</td>' +
+        '<td class="text-gray-600">' + esc(e.dept) + '</td>' +
+        '<td class="text-gray-600">' + esc(e.designation) + '</td>' +
+        '<td class="text-gray-600">' + esc(e.rm) + '</td>' +
+        '<td><span class="' + statusBadge + '">' + esc(e.status) + '</span></td>' +
+        '<td class="text-gray-600 text-xs">' + fmtDate(e.doj) + '</td>' +
+        '<td class="text-gray-600 text-xs">' + fmtDate(e.lwd) + '</td>' +
+        '</tr>';
+    }).join('');
+    wrap.innerHTML = '<table class="data">' +
+      '<thead><tr><th>Emp ID</th><th>Name</th><th>Region</th><th>Dept</th><th>Designation</th><th>Reporting Manager</th><th>Status</th><th>DOJ</th><th>LWD</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────────────────────────────
+
+  function updateLastUpdatedLabel() {
+    if (!state.lastUpdated) {
+      document.getElementById('last-updated').textContent = 'never';
+      return;
+    }
+    var secs = Math.floor((Date.now() - state.lastUpdated.getTime()) / 1000);
+    var label;
+    if (secs < 10) label = 'just now';
+    else if (secs < 60) label = secs + 's ago';
+    else if (secs < 3600) label = Math.floor(secs / 60) + 'm ago';
+    else label = Math.floor(secs / 3600) + 'h ago';
+    document.getElementById('last-updated').textContent = label;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+</script>

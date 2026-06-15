@@ -1,0 +1,28 @@
+<!-- Department Breakdown -->
+<section class="card" x-show="snapshot && snapshot.departmentBreakdown">
+  <div class="card-title">Department Breakdown</div>
+  <div class="space-y-3" x-show="snapshot.departmentBreakdown.length > 0">
+    <template x-for="dept in snapshot.departmentBreakdown" :key="dept.dept">
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="font-medium text-zinc-700" x-text="dept.dept"></span>
+          <span class="text-zinc-500 text-xs">
+            <span class="font-semibold text-zinc-900" x-text="dept.total"></span>
+            <span> total</span>
+            <span x-show="dept.confirmed > 0" class="ml-2 text-emerald-600" x-text="dept.confirmed + ' conf'"></span>
+            <span x-show="dept.probation > 0" class="ml-1 text-amber-600" x-text="dept.probation + ' prob'"></span>
+            <span x-show="dept.intern > 0" class="ml-1 text-indigo-600" x-text="dept.intern + ' int'"></span>
+          </span>
+        </div>
+        <div class="flex h-2 w-full rounded-full overflow-hidden bg-zinc-100">
+          <div class="bg-emerald-500" :style="`width: ${(dept.confirmed / dept.total) * 100}%`"></div>
+          <div class="bg-amber-500"   :style="`width: ${(dept.probation / dept.total) * 100}%`"></div>
+          <div class="bg-indigo-500"  :style="`width: ${(dept.intern / dept.total) * 100}%`"></div>
+        </div>
+      </div>
+    </template>
+  </div>
+  <div x-show="snapshot.departmentBreakdown.length === 0" class="text-zinc-500 text-sm py-6 text-center">
+    No department data.
+  </div>
+</section>

@@ -1,0 +1,73 @@
+<!-- Drill-Down -->
+<section class="card" x-show="snapshot && snapshot.drilldownFilters">
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+    <div>
+      <div class="card-title" style="margin-bottom: 0;">Drill-Down</div>
+      <div class="text-xs text-zinc-500 mt-1">
+        <span class="font-semibold text-zinc-900" x-text="drilldown.count"></span>
+        <span> employee(s) matching filters</span>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <select class="filter-select" x-model="drilldown.region" @change="onDrilldownChange()">
+        <template x-for="r in snapshot.drilldownFilters.regions" :key="r">
+          <option :value="r" x-text="r"></option>
+        </template>
+      </select>
+      <select class="filter-select" x-model="drilldown.dept" @change="onDrilldownChange()">
+        <template x-for="d in snapshot.drilldownFilters.departments" :key="d">
+          <option :value="d" x-text="d"></option>
+        </template>
+      </select>
+      <select class="filter-select" x-model="drilldown.rm" @change="onDrilldownChange()">
+        <template x-for="r in snapshot.drilldownFilters.reportingManagers" :key="r">
+          <option :value="r" x-text="r"></option>
+        </template>
+      </select>
+      <select class="filter-select" x-model="drilldown.status" @change="onDrilldownChange()">
+        <template x-for="s in snapshot.drilldownFilters.statuses" :key="s">
+          <option :value="s" x-text="s"></option>
+        </template>
+      </select>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="data" x-show="drilldown.rows.length > 0">
+      <thead>
+        <tr>
+          <th>Emp ID</th>
+          <th>Name</th>
+          <th>Region</th>
+          <th>Dept</th>
+          <th>Designation</th>
+          <th>Reporting Manager</th>
+          <th>Status</th>
+          <th>DOJ</th>
+          <th>LWD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="e in drilldown.rows" :key="e.empId">
+          <tr>
+            <td x-text="e.empId" class="font-mono text-xs text-zinc-500"></td>
+            <td x-text="e.name" class="font-medium"></td>
+            <td x-text="e.region" class="text-zinc-600"></td>
+            <td x-text="e.dept" class="text-zinc-600"></td>
+            <td x-text="e.designation" class="text-zinc-600"></td>
+            <td x-text="e.rm" class="text-zinc-600"></td>
+            <td>
+              <span class="badge" :class="{ 'badge-ok': e.status === 'Confirmed', 'badge-warning': e.status === 'Under Probation', 'badge-info': e.status === 'Intern' }" x-text="e.status"></span>
+            </td>
+            <td x-text="fmtDate(e.doj)" class="text-zinc-600 text-xs"></td>
+            <td x-text="fmtDate(e.lwd)" class="text-zinc-600 text-xs"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <div x-show="drilldown.rows.length === 0" class="text-zinc-500 text-sm py-8 text-center">
+      No employees match the current filters.
+    </div>
+  </div>
+</section>
