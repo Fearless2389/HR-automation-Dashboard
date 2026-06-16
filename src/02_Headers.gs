@@ -143,9 +143,9 @@ var Header = Header || {};
       }
 
       // The column may be legitimately absent (e.g. `lwd` only on interns,
-      // `allocationPct` only on US). We tolerate that — caller checks for
-      // undefined and handles accordingly. The pipeline only throws when
-      // a *required* column is missing, via Header.col().
+      // or columns that haven't been seeded yet on first bootstrap run).
+      // We tolerate that — caller checks for undefined and handles accordingly.
+      // The pipeline only throws when a *required* column is missing, via Header.col().
       if (hit >= 0) result[canonical] = hit;
     }
 

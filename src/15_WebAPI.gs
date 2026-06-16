@@ -101,6 +101,7 @@ function serializeEmployee_(e) {
     rm: e.rm,
     status: e.status,
     skillset: e.skillset,
+    project: e.project || '',
     doj: e.doj ? e.doj.toISOString() : null,
     lwd: e.lwd ? e.lwd.toISOString() : null,
     allocationPct: typeof e.allocationPct === 'number' ? e.allocationPct : null,
