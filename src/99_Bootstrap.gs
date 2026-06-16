@@ -39,6 +39,9 @@ function setupWorkbook() {
     seedProductivityHistory_();
     Log.info(runId, 'Productivity History seeded');
 
+    createAuditLogTab_();
+    Log.info(runId, 'Audit Log tab ensured');
+
     seedHistoricalLogs_();
     Log.info(runId, 'Historical Logs + Changelog seeded');
 
@@ -479,5 +482,31 @@ function seedProductivityHistory_() {
   });
   if (rows.length > 0) {
     sh.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Audit Log tab creation + protection
+// ──────────────────────────────────────────────────────────────────────────
+
+var AUDIT_LOG_TAB_ = 'Audit Log';
+
+function createAuditLogTab_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(AUDIT_LOG_TAB_);
+  if (!sh) {
+    sh = ss.insertSheet(AUDIT_LOG_TAB_);
+    var headers = ['Timestamp', 'Actor', 'Operation', 'Emp ID', 'Field', 'Old Value', 'New Value', 'Run ID'];
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    formatTabHeader_(sh, headers.length);
+    sh.setFrozenRows(1);
+    sh.setColumnWidths(1, headers.length, 140);
+    sh.setColumnWidth(8, 220);
+  }
+  // Protect data rows so HR can't accidentally edit history.
+  var protections = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  if (protections.length === 0) {
+    var p = sh.protect().setDescription('Audit Log — system-managed');
+    p.setWarningOnly(true); // soft protection (script can still write; user sees a warning popup)
   }
 }
