@@ -371,7 +371,8 @@ function backfillColumn_(sh, col, valueFn) {
   var changes = 0;
   for (var r = 0; r < values.length; r++) {
     var current = values[r][col - 1];
-    if (current === '' || current === null || current === undefined) {
+    if (current === '' || current === null || current === undefined
+        || (typeof current === 'string' && current.trim() === '')) {
       var rowObj = {};
       for (var c = 0; c < headerRange.length; c++) rowObj[String(headerRange[c]).trim()] = values[r][c];
       values[r][col - 1] = valueFn(rowObj);
@@ -380,6 +381,15 @@ function backfillColumn_(sh, col, valueFn) {
   }
   if (changes > 0) dataRange.setValues(values);
   return changes;
+}
+
+// Multi-alias lookup helpers — bootstrap runs before Header.col is fully primed,
+// so we fall through the same alias list configSeedRows_ declares.
+function rowEmpId_(row) {
+  return row['Emp ID'] || row['Employee ID'] || row['EmployeeID'] || row['Emp_ID'] || row['ID'] || '';
+}
+function rowDept_(row) {
+  return row['Dept'] || row['Department'] || row['Function'] || '';
 }
 
 function seedProjectAndAllocation_() {
@@ -393,12 +403,15 @@ function seedProjectAndAllocation_() {
     if (!sh) return;
     var projectCol = ensureColumn_(sh, 'Project');
     backfillColumn_(sh, projectCol, function (row) {
-      return pickProjectForEmployee_(row['Dept'] || row['Department'], row['Emp ID']);
+      return pickProjectForEmployee_(rowDept_(row), rowEmpId_(row));
     });
     if (t.needsAllocation) {
       var allocCol = ensureColumn_(sh, 'Allocation %');
+      // NOTE: Stored as integer percent (60-100). 04_DataAccess.coerceAllocation_
+      // normalises to fraction (0.6-1.0) on read by dividing values > 1 by 100.
+      // Keep this function returning integers; do not change to fractions.
       backfillColumn_(sh, allocCol, function (row) {
-        return pickAllocationForEmployee_(row['Emp ID']);
+        return pickAllocationForEmployee_(rowEmpId_(row));
       });
     }
   });
