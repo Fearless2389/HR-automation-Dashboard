@@ -490,23 +490,34 @@ function seedProductivityHistory_() {
 // ──────────────────────────────────────────────────────────────────────────
 
 var AUDIT_LOG_TAB_ = 'Audit Log';
+var AUDIT_LOG_HEADERS_ = ['Timestamp', 'Actor', 'Operation', 'Emp ID', 'Field', 'Old Value', 'New Value', 'Run ID'];
 
 function createAuditLogTab_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(AUDIT_LOG_TAB_);
   if (!sh) {
     sh = ss.insertSheet(AUDIT_LOG_TAB_);
-    var headers = ['Timestamp', 'Actor', 'Operation', 'Emp ID', 'Field', 'Old Value', 'New Value', 'Run ID'];
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    formatTabHeader_(sh, headers.length);
-    sh.setFrozenRows(1);
-    sh.setColumnWidths(1, headers.length, 140);
-    sh.setColumnWidth(8, 220);
+    applyAuditLogHeader_(sh);
+    sh.setColumnWidths(1, AUDIT_LOG_HEADERS_.length, 140);
+    sh.setColumnWidth(6, 200); // Old Value — likely to hold full field text
+    sh.setColumnWidth(7, 200); // New Value — same
   }
-  // Protect data rows so HR can't accidentally edit history.
+  // Recover from manual corruption: if HR cleared all rows (including the header),
+  // re-apply headers so Task 7's appendRow doesn't write headerless data into row 1.
+  if (sh.getLastRow() === 0) {
+    applyAuditLogHeader_(sh);
+  }
+  // Protect data rows so HR can't accidentally edit history. ProtectionType.SHEET
+  // is intentional (not RANGE) — we want the whole tab protected as a unit.
   var protections = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
   if (protections.length === 0) {
-    var p = sh.protect().setDescription('Audit Log — system-managed');
+    var p = sh.protect().setDescription('Audit Log — managed by HR Automation script — do not edit manually');
     p.setWarningOnly(true); // soft protection (script can still write; user sees a warning popup)
   }
+}
+
+function applyAuditLogHeader_(sh) {
+  sh.getRange(1, 1, 1, AUDIT_LOG_HEADERS_.length).setValues([AUDIT_LOG_HEADERS_]);
+  formatTabHeader_(sh, AUDIT_LOG_HEADERS_.length);
+  sh.setFrozenRows(1);
 }
