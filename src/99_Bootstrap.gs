@@ -126,6 +126,7 @@ function configSeedRows_() {
   // Email digest — recipient blank + demoMode TRUE during assignment review.
   // Email.send logs the would-send payload but DOES NOT dispatch via MailApp.
   rows.push(['email', 'digestRecipient', '']);
+  rows.push(['email', 'alertEmailRecipient', 'ruthviknagulapally@gmail.com']);
   rows.push(['email', 'digestCronHour', 9]);
   rows.push(['email', 'demoMode', 'true']);
   // Thresholds (per brief §4.4)
@@ -135,6 +136,7 @@ function configSeedRows_() {
   rows.push(['thresholds', 'lowProductivity', 0.6]);
   rows.push(['thresholds', 'benchAllocation', 0.4]);
   rows.push(['thresholds', 'productivityTarget', 0.8]);
+  rows.push(['thresholds', 'recommendationsCacheSeconds', 60]);
   // HR Health Score weights
   rows.push(['health.weights', 'stability', 25]);
   rows.push(['health.weights', 'alertLoad', 25]);
@@ -162,6 +164,10 @@ function configSeedRows_() {
   });
   rows.push(['aliases.us', 'allocationPct', 'Allocation %, Allocation, AllocationPct, Allocation Percent, Alloc %']);
   rows.push(['aliases.us', 'ctc', 'CTC, CTC USD, CTC (USD), Annual CTC, Cost To Company']);
+  // Phase 2 columns (Project on both, Allocation % on India — US already had Allocation %)
+  rows.push(['aliases.india', 'project', 'Project, Project Name, Project Assignment, Current Project']);
+  rows.push(['aliases.india', 'allocationPct', 'Allocation %, Allocation, AllocationPct, Allocation Percent, Alloc %']);
+  rows.push(['aliases.us', 'project', 'Project, Project Name, Project Assignment, Current Project']);
 
   // RM Data
   rows.push(['aliases.rm', 'empId', 'Emp ID, Employee ID']);
