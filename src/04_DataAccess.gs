@@ -133,10 +133,11 @@ var Data = Data || {};
         skillset: String(r.skillset || '').trim(),
         doj: coerceDate_(r.doj),
         status: String(r.status || '').trim(),
-        lwd: coerceDate_(r.lwd)
+        lwd: coerceDate_(r.lwd),
+        project: String(r.project || '').trim(),
+        allocationPct: coerceAllocation_(r.allocationPct)
       };
       if (tabKey === 'us') {
-        emp.allocationPct = coerceAllocation_(r.allocationPct);
         emp.ctc = coerceNum_(r.ctc);
       }
       return emp;
