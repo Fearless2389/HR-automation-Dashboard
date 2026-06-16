@@ -165,7 +165,7 @@ var Config = Config || {};
       health: { weights: { stability: 25, alertLoad: 25, riskPosture: 25, productivity: 25 }, bands: { green: 80, amber: 60 } },
       aliases: { india: {}, us: {}, rm: {}, finance: {}, offboarded: {} },
       tabs: {},
-      email: { digestRecipient: '', digestCronHour: 9, demoMode: true }
+      email: { digestRecipient: '', digestCronHour: 9, demoMode: true, alertEmailRecipient: '' }
     };
 
     for (var i = 0; i < values.length; i++) {
