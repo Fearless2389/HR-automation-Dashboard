@@ -33,6 +33,9 @@ function setupWorkbook() {
     addActionColumns_('us');
     Log.info(runId, 'Action columns added to India + US');
 
+    seedProjectAndAllocation_();
+    Log.info(runId, 'Project + Allocation columns seeded');
+
     seedHistoricalLogs_();
     Log.info(runId, 'Historical Logs + Changelog seeded');
 
@@ -307,4 +310,96 @@ function fakeLogMessage_(fn, level) {
   if (level === 'ERROR') return 'Recovered from transient failure during ' + fn;
   if (level === 'WARN') return fn + ': non-fatal anomaly (schema_drift_fuzzy or quota approaching)';
   return fn + ' completed';
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Project + Allocation seeding
+// ──────────────────────────────────────────────────────────────────────────
+
+var PROJECT_LIST_BY_DEPT_ = {
+  'Engineering': ['Apollo', 'Phoenix', 'Helios'],
+  'Finance':     ['Atlas', 'Vega'],
+  'Operations':  ['Orion'],
+  'HR':          ['Nimbus'],
+  'Sales':       ['Lyra']
+};
+var DEFAULT_PROJECT_POOL_ = ['Apollo', 'Phoenix', 'Helios', 'Atlas', 'Vega', 'Orion', 'Nimbus', 'Lyra'];
+
+function pickProjectForEmployee_(dept, empId) {
+  var pool = PROJECT_LIST_BY_DEPT_[String(dept || '').trim()] || DEFAULT_PROJECT_POOL_;
+  return pool[stableHash_(String(empId || '')) % pool.length];
+}
+
+function pickAllocationForEmployee_(empId) {
+  // 60–100, stable per empId
+  return 60 + (stableHash_(String(empId || '')) % 41);
+}
+
+function stableHash_(s) {
+  var h = 0;
+  for (var i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
+  return Math.abs(h);
+}
+
+/**
+ * Ensure a column with `header` exists on `sh`. Returns the 1-based column index.
+ * Appends to the right if missing. Idempotent.
+ */
+function ensureColumn_(sh, header) {
+  var lastCol = sh.getLastColumn();
+  if (lastCol > 0) {
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      if (String(headers[i]).trim() === header) return i + 1;
+    }
+  }
+  var newCol = lastCol + 1;
+  sh.getRange(1, newCol).setValue(header).setFontWeight('bold');
+  return newCol;
+}
+
+/**
+ * For each data row, if the cell in `col` is blank, write `valueFn(rowObj)`.
+ * Never overwrites existing values.
+ */
+function backfillColumn_(sh, col, valueFn) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  var headerRange = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var dataRange = sh.getRange(2, 1, lastRow - 1, sh.getLastColumn());
+  var values = dataRange.getValues();
+  var changes = 0;
+  for (var r = 0; r < values.length; r++) {
+    var current = values[r][col - 1];
+    if (current === '' || current === null || current === undefined) {
+      var rowObj = {};
+      for (var c = 0; c < headerRange.length; c++) rowObj[String(headerRange[c]).trim()] = values[r][c];
+      values[r][col - 1] = valueFn(rowObj);
+      changes++;
+    }
+  }
+  if (changes > 0) dataRange.setValues(values);
+  return changes;
+}
+
+function seedProjectAndAllocation_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tabs = [
+    { name: Config.canonicalToTabName('india'), needsAllocation: true },
+    { name: Config.canonicalToTabName('us'),    needsAllocation: false } // US already has Allocation %
+  ];
+  tabs.forEach(function (t) {
+    var sh = ss.getSheetByName(t.name);
+    if (!sh) return;
+    var projectCol = ensureColumn_(sh, 'Project');
+    backfillColumn_(sh, projectCol, function (row) {
+      return pickProjectForEmployee_(row['Dept'] || row['Department'], row['Emp ID']);
+    });
+    if (t.needsAllocation) {
+      var allocCol = ensureColumn_(sh, 'Allocation %');
+      backfillColumn_(sh, allocCol, function (row) {
+        return pickAllocationForEmployee_(row['Emp ID']);
+      });
+    }
+  });
 }
