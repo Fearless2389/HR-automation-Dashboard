@@ -120,6 +120,14 @@ var Config = Config || {};
     return ns.load().email.digestCronHour;
   };
 
+  ns.alertEmailRecipient = function () {
+    return ns.load().email.alertEmailRecipient || '';
+  };
+
+  ns.recommendationsCacheSeconds = function () {
+    return ns.load().thresholds.recommendationsCacheSeconds || 60;
+  };
+
   /**
    * Demo mode — when true, Email.send() does NOT actually dispatch via MailApp.
    * It logs the would-send payload and returns ok. Used during the assignment
@@ -182,6 +190,7 @@ var Config = Config || {};
         case 'email':
           if (key === 'digestCronHour') raw.email.digestCronHour = coerceNumber_(val);
           else if (key === 'demoMode') raw.email.demoMode = (String(val).toLowerCase() === 'true' || val === true);
+          else if (key === 'alertEmailRecipient') raw.email.alertEmailRecipient = String(val || '');
           else raw.email[key] = String(val);
           break;
         case 'tabs':
@@ -225,7 +234,8 @@ var Config = Config || {};
         probationLengthDays: 180,
         lowProductivity: 0.6,
         benchAllocation: 0.4,
-        productivityTarget: 0.8
+        productivityTarget: 0.8,
+        recommendationsCacheSeconds: 60
       },
       health: { weights: { stability: 25, alertLoad: 25, riskPosture: 25, productivity: 25 }, bands: { green: 80, amber: 60 } },
       aliases: {
@@ -252,7 +262,7 @@ var Config = Config || {};
         }
       },
       tabs: {},
-      email: { digestRecipient: '', digestCronHour: 9, demoMode: true }
+      email: { digestRecipient: '', digestCronHour: 9, demoMode: true, alertEmailRecipient: '' }
     };
   }
 
@@ -266,7 +276,9 @@ var Config = Config || {};
       skillset: ['Skillset', 'Skills', 'Tech Stack', 'Skill Set'],
       doj: ['DOJ', 'Date of Joining', 'Joining Date', 'Start Date'],
       status: ['Employment Status', 'Status', 'Employment_Status'],
-      lwd: ['LWD', 'Last Working Day', 'Last Working Day (Interns Only)', 'End Date', 'Last Day', 'Exit Date', 'Termination Date', 'Last Working Date', 'EndDate', 'Tentative LWD']
+      lwd: ['LWD', 'Last Working Day', 'Last Working Day (Interns Only)', 'End Date', 'Last Day', 'Exit Date', 'Termination Date', 'Last Working Date', 'EndDate', 'Tentative LWD'],
+      project: ['Project', 'Project Name', 'Project Assignment', 'Current Project'],
+      allocationPct: ['Allocation %', 'Allocation', 'AllocationPct', 'Allocation Percent', 'Alloc %']
     };
   }
 })(Config);
