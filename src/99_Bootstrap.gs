@@ -36,6 +36,9 @@ function setupWorkbook() {
     seedProjectAndAllocation_();
     Log.info(runId, 'Project + Allocation columns seeded');
 
+    seedProductivityHistory_();
+    Log.info(runId, 'Productivity History seeded');
+
     seedHistoricalLogs_();
     Log.info(runId, 'Historical Logs + Changelog seeded');
 
@@ -415,4 +418,48 @@ function seedProjectAndAllocation_() {
       });
     }
   });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Productivity History tab seeding (12 months per employee)
+// ──────────────────────────────────────────────────────────────────────────
+
+var PROD_HISTORY_TAB_ = 'Productivity History';
+
+function seedProductivityHistory_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(PROD_HISTORY_TAB_);
+  if (!sh) {
+    sh = ss.insertSheet(PROD_HISTORY_TAB_);
+    sh.getRange(1, 1, 1, 3).setValues([['Emp ID', 'Month', 'Productivity']]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  // If the tab already has data rows, leave them alone (idempotent re-run).
+  if (sh.getLastRow() > 1) return;
+
+  var fin = Data.finance();
+  var now = new Date();
+  var rows = [];
+  fin.forEach(function (f) {
+    if (!f.empId) return;
+    var target = typeof f.productivity === 'number' ? f.productivity : 0.75;
+    for (var k = 11; k >= 0; k--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - k, 1);
+      var ym = Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM');
+      var value;
+      if (k === 0) {
+        value = target; // anchor current month exactly to target
+      } else {
+        var noise = (stableHash_(f.empId + ':' + ym) % 100 - 50) / 1250; // ±0.04
+        var drift = (12 - k) * 0.005 * (stableHash_(f.empId) % 2 === 0 ? 1 : -1);
+        value = target - drift + noise;
+      }
+      if (value < 0.30) value = 0.30;
+      if (value > 0.99) value = 0.99;
+      rows.push([f.empId, ym, Math.round(value * 100) / 100]);
+    }
+  });
+  if (rows.length > 0) {
+    sh.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
 }
