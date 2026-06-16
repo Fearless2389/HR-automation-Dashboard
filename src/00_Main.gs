@@ -12,12 +12,18 @@
  * trigger doesn't loop on its own edits.
  */
 
-/** Web App entry. Auth-gates via _Config allowlist. */
+/**
+ * Web App entry. Auth-gates via _Config allowlist.
+ *
+ * When `_Config.allowlist.emails` contains `*`, the app is in OPEN ACCESS mode:
+ * even anonymous viewers (no Google sign-in) get through. Used during the
+ * assignment review so reviewers don't hit a consent / sign-in wall.
+ */
 function doGet(e) {
   var email;
   try { email = Session.getActiveUser().getEmail() || ''; } catch (err) { email = ''; }
 
-  if (!email || !Config.isAllowed(email)) {
+  if (!Config.isAllowed(email)) {
     return HtmlService.createHtmlOutputFromFile('403')
       .setTitle('HR Dashboard — Not Authorized')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);

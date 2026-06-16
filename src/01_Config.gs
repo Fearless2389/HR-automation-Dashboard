@@ -58,14 +58,14 @@ var Config = Config || {};
    * access without requiring you to pre-list their address.
    */
   ns.isAllowed = function (email) {
-    if (!email) return false;
     var cfg = ns.load();
     var allowlist = cfg.allowlist || [];
-    var lower = String(email).trim().toLowerCase();
+    var lower = String(email || '').trim().toLowerCase();
     for (var i = 0; i < allowlist.length; i++) {
       var entry = String(allowlist[i]).trim().toLowerCase();
       if (!entry) continue;
-      if (entry === '*') return true;                              // any Google user
+      if (entry === '*') return true;                              // open mode: anyone, including anonymous
+      if (!lower) continue;                                         // remaining checks need an email
       if (entry.indexOf('*@') === 0 && lower.length > entry.length - 1
           && lower.substring(lower.length - (entry.length - 1)) === entry.substring(1)) {
         return true;                                                // domain wildcard
