@@ -426,23 +426,38 @@ function seedProjectAndAllocation_() {
 
 var PROD_HISTORY_TAB_ = 'Productivity History';
 
+/**
+ * Seed 12 months of synthetic productivity history per employee.
+ *
+ * Idempotency: an empty tab (header only) is treated as uninitialized and
+ * will be retried on the next run. A tab with data rows is left untouched.
+ *
+ * Load order: requires _Config aliases for the Finance tab to be seeded
+ * before this runs. setupWorkbook calls seedConfig_ + Config.bust before
+ * this function, so the order is correct — do not reorder without thought.
+ */
 function seedProductivityHistory_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(PROD_HISTORY_TAB_);
   if (!sh) {
     sh = ss.insertSheet(PROD_HISTORY_TAB_);
-    sh.getRange(1, 1, 1, 3).setValues([['Emp ID', 'Month', 'Productivity']]).setFontWeight('bold');
+    sh.getRange(1, 1, 1, 3).setValues([['Emp ID', 'Month', 'Productivity']]);
+    formatTabHeader_(sh, 3);
     sh.setFrozenRows(1);
   }
   // If the tab already has data rows, leave them alone (idempotent re-run).
   if (sh.getLastRow() > 1) return;
 
+  // Requires _Config aliases seeded (caller responsibility — see docstring).
   var fin = Data.finance();
   var now = new Date();
   var rows = [];
   fin.forEach(function (f) {
     if (!f.empId) return;
     var target = typeof f.productivity === 'number' ? f.productivity : 0.75;
+    // Drift sign: +1 → employee was below target and recovered (upward shape).
+    //             -1 → employee was above target and declined (downward shape).
+    var driftSign = stableHash_(f.empId) % 2 === 0 ? 1 : -1;
     for (var k = 11; k >= 0; k--) {
       var d = new Date(now.getFullYear(), now.getMonth() - k, 1);
       var ym = Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM');
@@ -450,10 +465,13 @@ function seedProductivityHistory_() {
       if (k === 0) {
         value = target; // anchor current month exactly to target
       } else {
-        var noise = (stableHash_(f.empId + ':' + ym) % 100 - 50) / 1250; // ±0.04
-        var drift = (12 - k) * 0.005 * (stableHash_(f.empId) % 2 === 0 ? 1 : -1);
+        // Uniform integer noise in [-50, 49]/1250 ≈ ±0.04 (close enough to gaussian for demo data).
+        var noise = (stableHash_(f.empId + ':' + ym) % 100 - 50) / 1250;
+        var drift = (12 - k) * 0.005 * driftSign;
         value = target - drift + noise;
       }
+      // NOTE: employees near the ceiling (target ~0.99) may appear artificially flat
+      // after clamping — known demo trade-off; Task 15 should treat it as expected.
       if (value < 0.30) value = 0.30;
       if (value > 0.99) value = 0.99;
       rows.push([f.empId, ym, Math.round(value * 100) / 100]);
