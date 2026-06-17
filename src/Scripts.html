@@ -839,4 +839,86 @@ function openFinanceDrill_(key, rows) {
 }
 function formatINR_(n) { if (!n) return '₹0'; if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + Math.round(n).toLocaleString('en-IN'); }
 function formatUSD_(n) { if (!n) return '$0'; if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M'; if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K'; return '$' + Math.round(n).toLocaleString('en-US'); }
+function renderProductivityTab(s) {
+  var p = (s && s.productivity) || { all: [], top5: [], bottom5: [] };
+  renderRankList_(document.getElementById('prod-top5'), p.top5);
+  renderRankList_(document.getElementById('prod-bottom5'), p.bottom5);
+
+  // Populate filter dropdowns from snapshot
+  var f = (s && s.drilldownFilters) || {};
+  setOptions('prod-filter-region', f.regions || ['All']);
+  setOptions('prod-filter-dept', f.departments || ['All']);
+  setOptions('prod-filter-project', f.projects || ['All']);
+
+  // Filtered + searched table
+  var rows = (p.all || []).filter(function (r) {
+    if (state.prod.region !== 'All' && r.region !== state.prod.region) return false;
+    if (state.prod.dept !== 'All' && r.dept !== state.prod.dept) return false;
+    if (state.prod.project !== 'All' && r.project !== state.prod.project) return false;
+    if (state.prod.text) {
+      var hay = (r.name + ' ' + r.empId + ' ' + r.dept + ' ' + (r.project || '')).toLowerCase();
+      if (hay.indexOf(state.prod.text.toLowerCase()) === -1) return false;
+    }
+    return true;
+  });
+  var wrap = document.getElementById('prod-table-wrap');
+  if (!rows.length) { wrap.innerHTML = '<div class="empty-state">No employees match the filters.</div>'; return; }
+  var html = rows.map(function (r) {
+    return '<tr><td>' + riskDot({ status:'Confirmed', productivity: r.current, allocationPct: r.allocationPct, lwd: null }) + '</td>' +
+      '<td class="font-medium">' + esc(r.name) + '</td><td>' + esc(r.dept) + '</td><td>' + esc(r.region) + '</td><td>' + esc(r.project) + '</td>' +
+      '<td>' + (r.current * 100).toFixed(0) + '%</td>' +
+      '<td><span class="trend-chip trend-' + r.trend + '">' + (r.trend === 'up' ? '↑' : r.trend === 'down' ? '↓' : '→') + ' ' + r.trend + '</span></td>' +
+      '<td>' + sparklineSvg_(r.spark || []) + '</td>' +
+      '<td><button class="btn-ghost" data-mail="' + esc(r.empId) + '">Email Manager</button></td></tr>';
+  }).join('');
+  wrap.innerHTML = '<table class="data"><thead><tr><th></th><th>Name</th><th>Dept</th><th>Region</th><th>Project</th><th>Current</th><th>Trend</th><th>Last 6mo</th><th></th></tr></thead><tbody>' + html + '</tbody></table>';
+  wrap.querySelectorAll('[data-mail]').forEach(function (b) {
+    b.addEventListener('click', function () { openManagerEmailModal(b.getAttribute('data-mail')); });
+  });
+}
+
+function renderRankList_(el, rows) {
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">No data.</div>'; return; }
+  el.innerHTML = rows.map(function (r) {
+    return '<div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">' +
+      '<div><div class="text-sm font-medium">' + esc(r.name) + '</div><div class="text-xs text-gray-500">' + esc(r.dept) + '</div></div>' +
+      '<div class="flex items-center gap-2"><span class="text-sm font-semibold">' + (r.current * 100).toFixed(0) + '%</span>' +
+      '<span class="trend-chip trend-' + r.trend + '">' + (r.trend === 'up' ? '↑' : r.trend === 'down' ? '↓' : '→') + '</span></div>' +
+    '</div>';
+  }).join('');
+}
+
+function sparklineSvg_(values) {
+  if (!values.length) return '';
+  var w = 60, h = 16, max = Math.max.apply(null, values), min = Math.min.apply(null, values);
+  var range = (max - min) || 1;
+  var pts = values.map(function (v, i) {
+    var x = (i / (values.length - 1 || 1)) * w;
+    var y = h - ((v - min) / range) * h;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '"><polyline fill="none" stroke="#4F46E5" stroke-width="1.5" points="' + pts + '"/></svg>';
+}
+
+function openManagerEmailModal(empId) {
+  google.script.run.withSuccessHandler(function (result) {
+    if (!result.ok) { alert('Failed: ' + result.message); return; }
+    openModal('<h3 style="font-size:16px;font-weight:600;margin:0 0 12px;">' + esc(result.subject || '') + '</h3>' +
+      '<div style="font-size:13px;border:1px solid #E4E4E7;padding:12px;border-radius:8px;max-height:380px;overflow-y:auto;">' + (result.body || '') + '</div>' +
+      '<div class="mt-4"><label class="modal-label">Send to (manager email)</label>' +
+      '<input id="field-mailto" type="email" class="modal-input" placeholder="manager@techolution.com" /></div>' +
+      '<div class="flex justify-end gap-2 mt-4"><button id="btn-cancel" class="btn-ghost">Cancel</button>' +
+      '<button id="btn-send" class="btn-primary">Send</button></div>');
+    document.getElementById('btn-cancel').addEventListener('click', closeModal);
+    document.getElementById('btn-send').addEventListener('click', function () {
+      var to = document.getElementById('field-mailto').value;
+      if (!to) { alert('Email required'); return; }
+      google.script.run.withSuccessHandler(function (sr) {
+        alert(sr.ok ? (sr.message === 'Demo mode — not dispatched' ? 'Demo mode: would have sent.' : 'Sent.') : 'Failed: ' + sr.message);
+        closeModal();
+      }).api_sendManagerEmail(empId, to);
+    });
+  }).api_sendManagerEmail(empId, '');
+}
 </script>
