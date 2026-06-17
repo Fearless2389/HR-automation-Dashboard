@@ -129,6 +129,10 @@ function api_currentUser() {
   return { email: email, isAllowed: Config.isAllowed(email) };
 }
 
+function api_dismissRecommendation(id) {
+  try { Recommendations.dismiss(id); return { ok: true }; } catch (e) { return { ok: false, message: e.message }; }
+}
+
 // ───────── serializers ─────────
 
 function serializeEmployee_(e, finByEmp) {
