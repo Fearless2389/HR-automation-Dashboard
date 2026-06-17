@@ -160,8 +160,14 @@ function locateEmployee_(empId) {
     var tabName = Config.canonicalToTabName(regions[i]);
     var sh = ss.getSheetByName(tabName);
     if (!sh) continue;
+    var empIdCol;
+    try {
+      // Wrap per-region so a SchemaDriftError on India doesn't kill a US lookup.
+      empIdCol = Header.col(sh, regions[i], 'empId') + 1; // 1-based
+    } catch (e) {
+      continue;
+    }
     var headerRow = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-    var empIdCol = Header.col(sh, regions[i], 'empId') + 1; // 1-based
     var lastRow = sh.getLastRow();
     if (lastRow < 2) continue;
     var ids = sh.getRange(2, empIdCol, lastRow - 1, 1).getValues();
@@ -172,6 +178,20 @@ function locateEmployee_(empId) {
     }
   }
   return null;
+}
+
+/**
+ * Returns true if the given raw header string matches any alias for `canonical`
+ * on the given region/tabKey. Trim + case-sensitive (matches the rest of the
+ * resolver behavior).
+ */
+function headerMatchesCanonical_(rawHeader, tabKey, canonical) {
+  var aliases = Config.aliasesFor(tabKey, canonical);
+  var trimmed = String(rawHeader).trim();
+  for (var i = 0; i < aliases.length; i++) {
+    if (String(aliases[i]).trim() === trimmed) return true;
+  }
+  return false;
 }
 
 function nextEmpId_(region) {
@@ -203,12 +223,13 @@ function api_updateEmployee(empId, patch) {
   var runId = Log.start('api_updateEmployee', 'webapp');
   try {
     if (!empId || !patch) throw new Error('empId and patch required');
-    var loc = locateEmployee_(empId);
-    if (!loc) throw new Error('employee not found: ' + empId);
 
     var lock = LockService.getDocumentLock();
     if (!lock.tryLock(5000)) throw new Error('could not acquire document lock');
     try {
+      // locateEmployee_ inside the lock so a concurrent insert can't shift loc.row.
+      var loc = locateEmployee_(empId);
+      if (!loc) throw new Error('employee not found: ' + empId);
       var changes = [];
       var rowValues = loc.sheet.getRange(loc.row, 1, 1, loc.sheet.getLastColumn()).getValues()[0];
       withSilentWrite(function () {
@@ -310,14 +331,15 @@ function api_offboardEmployee(empId, reason) {
   var runId = Log.start('api_offboardEmployee', 'webapp');
   try {
     if (!empId) throw new Error('empId required');
-    var loc = locateEmployee_(empId);
-    if (!loc) throw new Error('employee not found: ' + empId);
     var reasonStr = String(reason || '').trim();
     if (!reasonStr) throw new Error('reason required');
 
     var lock = LockService.getDocumentLock();
     if (!lock.tryLock(5000)) throw new Error('could not acquire document lock');
     try {
+      // locateEmployee_ inside the lock so loc.row can't be shifted by a concurrent insert.
+      var loc = locateEmployee_(empId);
+      if (!loc) throw new Error('employee not found: ' + empId);
       var rowValues = loc.sheet.getRange(loc.row, 1, 1, loc.sheet.getLastColumn()).getValues()[0];
       var nameIdx = -1, statusIdx = -1, deptIdx = -1;
       for (var i = 0; i < loc.headers.length; i++) {
@@ -334,19 +356,20 @@ function api_offboardEmployee(empId, reason) {
         // 1. Flip status on source row
         if (statusIdx >= 0) loc.sheet.getRange(loc.row, statusIdx + 1).setValue('Offboarded');
 
-        // 2. Append a row to Offboarded Resources
+        // 2. Append a row to Offboarded Resources, using alias-aware header matching
+        //    so the verification protocol's column-rename test on Offboarded survives.
         var ss = SpreadsheetApp.getActiveSpreadsheet();
         var offSh = ss.getSheetByName(Config.canonicalToTabName('offboarded'));
         if (offSh) {
           var offHeaders = offSh.getRange(1, 1, 1, offSh.getLastColumn()).getValues()[0];
           var newRow = new Array(offHeaders.length).fill('');
           for (var j = 0; j < offHeaders.length; j++) {
-            var oh = String(offHeaders[j]).trim();
-            if (oh === 'Emp ID' || oh === 'Employee ID') newRow[j] = empId;
-            else if (oh === 'Name' || oh === 'Employee Name') newRow[j] = empName;
-            else if (oh === 'Dept' || oh === 'Department') newRow[j] = empDept;
-            else if (oh === 'DOL' || oh === 'Date of Leaving' || oh === 'Last Working Day' || oh === 'Exit Date') newRow[j] = new Date();
-            else if (oh === 'Reason' || oh === 'Exit Reason' || oh === 'Reason for Leaving') newRow[j] = reasonStr;
+            var oh = offHeaders[j];
+            if (headerMatchesCanonical_(oh, 'offboarded', 'empId')) newRow[j] = empId;
+            else if (headerMatchesCanonical_(oh, 'offboarded', 'name')) newRow[j] = empName;
+            else if (headerMatchesCanonical_(oh, 'offboarded', 'dept')) newRow[j] = empDept;
+            else if (headerMatchesCanonical_(oh, 'offboarded', 'dol')) newRow[j] = new Date();
+            else if (headerMatchesCanonical_(oh, 'offboarded', 'reason')) newRow[j] = reasonStr;
           }
           offSh.appendRow(newRow);
         }
