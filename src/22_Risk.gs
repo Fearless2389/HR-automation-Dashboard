@@ -3,6 +3,18 @@
  *
  * Pure. No I/O. Deterministic from the passed-in employee object.
  *
+ * Policy notes:
+ *   - Missing productivity (`emp.productivity` undefined/null) and missing
+ *     allocation (`emp.allocationPct` null) are treated as "no signal" — they
+ *     do NOT push a tier. Callers wanting productivity to influence the dot
+ *     must merge a Finance row's `productivity` onto `emp` first.
+ *   - LWD rules fire only for FUTURE departures (lwdDays >= 0). A past LWD on
+ *     an Offboarded record is captured by the status rule alone.
+ *   - dotHtml escapes `"` in the title attribute. All current reason strings
+ *     are constructed inline so `<`, `>`, `&`, `'` cannot appear. A future
+ *     contributor adding a reason that includes user-supplied text must
+ *     extend the escaping accordingly.
+ *
  * Public API:
  *   Risk.tier(emp)    → { tier: 'green'|'amber'|'red', reasons: [str, ...] }
  *   Risk.dotHtml(emp) → '<span class="risk-dot risk-{tier}" title="{reasons}"></span>'
@@ -32,15 +44,16 @@ var Risk = Risk || {};
     var prod = typeof emp.productivity === 'number' ? emp.productivity : null;
     var alloc = typeof emp.allocationPct === 'number' ? emp.allocationPct : null;
 
-    // Red rules
+    // Red rules — LWD rule guards lwdDays >= 0 so a long-departed Offboarded
+    // record doesn't double-trigger with the Status rule.
     if (String(emp.status) === 'Offboarded') { tier = 'red'; reasons.push('Status: Offboarded'); }
-    if (lwdDays !== null && lwdDays < 14) { tier = 'red'; reasons.push('LWD in ' + lwdDays + 'd'); }
+    if (lwdDays !== null && lwdDays >= 0 && lwdDays < 14) { tier = 'red'; reasons.push('LWD in ' + lwdDays + 'd'); }
     if (prod !== null && prod < 0.50) { tier = 'red'; reasons.push('Productivity ' + prod.toFixed(2)); }
 
     if (tier === 'red') return { tier: tier, reasons: reasons };
 
     // Amber rules
-    if (lwdDays !== null && lwdDays < 45) { tier = 'amber'; reasons.push('LWD in ' + lwdDays + 'd'); }
+    if (lwdDays !== null && lwdDays >= 0 && lwdDays < 45) { tier = 'amber'; reasons.push('LWD in ' + lwdDays + 'd'); }
     if (probDays !== null && probDays < 30) { tier = 'amber'; reasons.push('Confirmation in ' + probDays + 'd'); }
     if (prod !== null && prod < 0.70) { tier = 'amber'; reasons.push('Productivity ' + prod.toFixed(2)); }
     if (alloc !== null && alloc < 0.40) { tier = 'amber'; reasons.push('Allocation ' + Math.round(alloc * 100) + '%'); }
