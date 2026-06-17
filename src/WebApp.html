@@ -39,9 +39,13 @@
 
   <!-- Tab nav (page sections) -->
   <nav id="tab-nav" class="hidden bg-white border-b border-gray-200">
-    <div class="mx-auto max-w-7xl px-6 flex items-center gap-1">
+    <div class="mx-auto max-w-7xl px-6 flex items-center gap-1 flex-wrap">
       <button class="tab-link tab-link-active" data-tab="overview">Overview</button>
       <button class="tab-link" data-tab="alerts">Alerts <span class="count-pill" id="tab-alerts-count">0</span></button>
+      <button class="tab-link" data-tab="alertengine">Alert Engine</button>
+      <button class="tab-link" data-tab="finance">Finance</button>
+      <button class="tab-link" data-tab="productivity">Productivity</button>
+      <button class="tab-link" data-tab="manage">Manage Employees</button>
       <button class="tab-link" data-tab="org">Org View</button>
       <button class="tab-link" data-tab="drilldown">Drill-Down</button>
     </div>
@@ -134,6 +138,86 @@
       </section>
     </div>
 
+    <!-- ALERT ENGINE TAB -->
+    <div data-tab-content="alertengine" class="tab-panel hidden">
+      <section class="card">
+        <div class="flex items-start justify-between mb-4 flex-wrap gap-3">
+          <div>
+            <div class="card-title" style="margin-bottom:0;">Alert Engine</div>
+            <div class="text-xs text-gray-500 mt-1">Smart recommendations from live data</div>
+          </div>
+          <div class="text-xs text-gray-400">Auto-refreshed</div>
+        </div>
+        <div id="recs-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+        <details class="mt-6 pt-4 border-t border-gray-100">
+          <summary class="text-sm text-gray-600 cursor-pointer">View raw alerts</summary>
+          <div id="raw-alerts-wrap" class="mt-4"></div>
+        </details>
+      </section>
+    </div>
+
+    <!-- FINANCE TAB -->
+    <div data-tab-content="finance" class="tab-panel hidden">
+      <section class="card mb-6">
+        <div class="card-title">Project-wise CTC</div>
+        <div id="finance-projects" class="space-y-2"></div>
+      </section>
+      <section class="card mb-6">
+        <div class="card-title">Department-wise CTC</div>
+        <div id="finance-depts" class="space-y-2"></div>
+      </section>
+      <section class="card">
+        <div class="card-title">Region split</div>
+        <div id="finance-regions" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+      </section>
+    </div>
+
+    <!-- PRODUCTIVITY TAB -->
+    <div data-tab-content="productivity" class="tab-panel hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <section class="card">
+          <div class="card-title">Top 5 performers</div>
+          <div id="prod-top5"></div>
+        </section>
+        <section class="card">
+          <div class="card-title">Bottom 5 performers</div>
+          <div id="prod-bottom5"></div>
+        </section>
+      </div>
+      <section class="card">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div class="card-title" style="margin-bottom:0;">All employees</div>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="prod-search" class="filter-select" placeholder="Search name, dept, project…" />
+            <select class="filter-select" id="prod-filter-region"></select>
+            <select class="filter-select" id="prod-filter-dept"></select>
+            <select class="filter-select" id="prod-filter-project"></select>
+          </div>
+        </div>
+        <div id="prod-table-wrap" class="overflow-x-auto"></div>
+      </section>
+    </div>
+
+    <!-- MANAGE EMPLOYEES TAB -->
+    <div data-tab-content="manage" class="tab-panel hidden">
+      <section class="card">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div>
+            <div class="card-title" style="margin-bottom:0;">Manage Employees</div>
+            <div class="text-xs text-gray-500 mt-1"><span id="manage-count">0</span> matching</div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="manage-search" class="filter-select" placeholder="Search…" />
+            <select class="filter-select" id="manage-filter-region"></select>
+            <select class="filter-select" id="manage-filter-dept"></select>
+            <select class="filter-select" id="manage-filter-status"></select>
+            <button id="btn-add-employee" class="btn-primary">+ Add Employee</button>
+          </div>
+        </div>
+        <div id="manage-table-wrap" class="overflow-x-auto"></div>
+      </section>
+    </div>
+
     <!-- DRILL-DOWN TAB -->
     <div data-tab-content="drilldown" class="tab-panel hidden">
       <section id="drilldown-section" class="card">
@@ -151,6 +235,12 @@
         </div>
         <div class="overflow-x-auto" id="drilldown-table-wrap"></div>
       </section>
+    </div>
+
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div id="modal-panel" class="modal-panel">
+        <div id="modal-content"></div>
+      </div>
     </div>
 
     <footer class="pt-8 pb-12 text-center text-xs text-gray-400">
