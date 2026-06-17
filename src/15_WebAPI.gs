@@ -61,11 +61,17 @@ function api_snapshot() {
 function api_drilldown(filter) {
   filter = filter || {};
   var emps = Data.allEmployees();
+  var text = String((filter && filter.text) || '').trim().toLowerCase();
   var out = emps.filter(function (e) {
     if (filter.region && filter.region !== 'All' && e.__region !== filter.region) return false;
     if (filter.dept && filter.dept !== 'All' && e.dept !== filter.dept) return false;
     if (filter.rm && filter.rm !== 'All' && e.rm !== filter.rm) return false;
     if (filter.status && filter.status !== 'All' && e.status !== filter.status) return false;
+    if (filter.project && filter.project !== 'All' && e.project !== filter.project) return false;
+    if (text) {
+      var hay = [e.name, e.empId, e.skillset, e.designation, e.project].join(' ').toLowerCase();
+      if (hay.indexOf(text) === -1) return false;
+    }
     return true;
   }).map(serializeEmployee_);
   return { count: out.length, rows: out };
@@ -140,4 +146,227 @@ function distinctValues_(arr, field) {
 
 function tryEmail_() {
   try { return Session.getActiveUser().getEmail() || ''; } catch (e) { return ''; }
+}
+
+// ───────── Phase 2 write helpers ─────────
+
+var EDITABLE_FIELDS_ = ['name', 'dept', 'designation', 'rm', 'status', 'project', 'allocationPct', 'doj', 'skillset', 'lwd'];
+
+function locateEmployee_(empId) {
+  if (!empId) throw new Error('empId required');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var regions = ['india', 'us'];
+  for (var i = 0; i < regions.length; i++) {
+    var tabName = Config.canonicalToTabName(regions[i]);
+    var sh = ss.getSheetByName(tabName);
+    if (!sh) continue;
+    var headerRow = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var empIdCol = Header.col(sh, regions[i], 'empId') + 1; // 1-based
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) continue;
+    var ids = sh.getRange(2, empIdCol, lastRow - 1, 1).getValues();
+    for (var r = 0; r < ids.length; r++) {
+      if (String(ids[r][0]).trim() === String(empId).trim()) {
+        return { region: regions[i], sheet: sh, row: r + 2, headers: headerRow };
+      }
+    }
+  }
+  return null;
+}
+
+function nextEmpId_(region) {
+  var prefix = region === 'india' ? 'IN1' : 'US1';
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(Config.canonicalToTabName(region));
+  if (!sh) throw new Error('region tab missing: ' + region);
+  var empIdCol = Header.col(sh, region, 'empId') + 1;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return prefix + '001';
+  var ids = sh.getRange(2, empIdCol, lastRow - 1, 1).getValues();
+  var maxN = 0;
+  ids.forEach(function (row) {
+    var m = String(row[0]).match(/^[A-Z]{2}1(\d+)$/);
+    if (m) { var n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+  });
+  var next = maxN + 1;
+  return prefix + (next < 1000 ? ('00' + next).slice(-3) : String(next));
+}
+
+function canonicalToHeader_(region, canonical) {
+  var aliases = Config.aliasesFor(region, canonical);
+  return aliases[0] || canonical;
+}
+
+// ───────── api_updateEmployee ─────────
+
+function api_updateEmployee(empId, patch) {
+  var runId = Log.start('api_updateEmployee', 'webapp');
+  try {
+    if (!empId || !patch) throw new Error('empId and patch required');
+    var loc = locateEmployee_(empId);
+    if (!loc) throw new Error('employee not found: ' + empId);
+
+    var lock = LockService.getDocumentLock();
+    if (!lock.tryLock(5000)) throw new Error('could not acquire document lock');
+    try {
+      var changes = [];
+      var rowValues = loc.sheet.getRange(loc.row, 1, 1, loc.sheet.getLastColumn()).getValues()[0];
+      withSilentWrite(function () {
+        Object.keys(patch).forEach(function (field) {
+          if (EDITABLE_FIELDS_.indexOf(field) === -1) return; // ignore unknown
+          var header = canonicalToHeader_(loc.region, field);
+          var colIdx = -1;
+          for (var i = 0; i < loc.headers.length; i++) {
+            if (String(loc.headers[i]).trim() === header) { colIdx = i; break; }
+          }
+          if (colIdx === -1) return; // header not present
+          var oldVal = rowValues[colIdx];
+          var newVal = patch[field];
+          if (field === 'allocationPct' && typeof newVal === 'number' && newVal <= 1) newVal = newVal * 100;
+          if (String(oldVal) === String(newVal)) return; // no-op
+          loc.sheet.getRange(loc.row, colIdx + 1).setValue(newVal);
+          changes.push({ field: field, oldVal: oldVal, newVal: newVal });
+        });
+      });
+
+      AuditLog.recordMany('update', empId, changes, runId);
+      Log.info(runId, 'employee.update', { empId: empId, region: loc.region, changeCount: changes.length });
+      Data.bustAll();
+      Cache.bust('snapshot:');
+      Log.end(runId, { changeCount: changes.length });
+      return { ok: true, changeCount: changes.length };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    Log.error(runId, 'api_updateEmployee: ' + e.message, { stack: e.stack });
+    Log.end(runId, { status: 'FAIL' });
+    return { ok: false, message: e.message };
+  }
+}
+
+// ───────── api_addEmployee ─────────
+
+function api_addEmployee(payload) {
+  var runId = Log.start('api_addEmployee', 'webapp');
+  try {
+    if (!payload || !payload.region) throw new Error('payload.region required (india|us)');
+    if (payload.region !== 'india' && payload.region !== 'us') throw new Error('region must be india or us');
+
+    var lock = LockService.getDocumentLock();
+    if (!lock.tryLock(5000)) throw new Error('could not acquire document lock');
+    try {
+      var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Config.canonicalToTabName(payload.region));
+      var newId = nextEmpId_(payload.region);
+      var headerRow = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+      var row = new Array(headerRow.length).fill('');
+
+      function setField(canonical, value) {
+        var header = canonicalToHeader_(payload.region, canonical);
+        for (var i = 0; i < headerRow.length; i++) {
+          if (String(headerRow[i]).trim() === header) { row[i] = value; return; }
+        }
+      }
+      setField('empId', newId);
+      setField('name', payload.name || '');
+      setField('dept', payload.dept || '');
+      setField('designation', payload.designation || '');
+      setField('rm', payload.rm || '');
+      setField('status', payload.status || 'Confirmed');
+      setField('project', payload.project || 'Unassigned');
+      setField('skillset', payload.skillset || '');
+      if (payload.doj) setField('doj', new Date(payload.doj));
+      if (typeof payload.allocationPct === 'number') {
+        setField('allocationPct', payload.allocationPct <= 1 ? payload.allocationPct * 100 : payload.allocationPct);
+      }
+
+      withSilentWrite(function () {
+        sh.appendRow(row);
+      });
+
+      AuditLog.record({
+        op: 'add', empId: newId, field: '', oldVal: '',
+        newVal: JSON.stringify({ region: payload.region, name: payload.name, dept: payload.dept, designation: payload.designation, project: payload.project }),
+        runId: runId
+      });
+      Log.info(runId, 'employee.add', { empId: newId, region: payload.region });
+      Data.bustAll();
+      Cache.bust('snapshot:');
+      Log.end(runId, { empId: newId });
+      return { ok: true, empId: newId };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    Log.error(runId, 'api_addEmployee: ' + e.message, { stack: e.stack });
+    Log.end(runId, { status: 'FAIL' });
+    return { ok: false, message: e.message };
+  }
+}
+
+// ───────── api_offboardEmployee ─────────
+
+function api_offboardEmployee(empId, reason) {
+  var runId = Log.start('api_offboardEmployee', 'webapp');
+  try {
+    if (!empId) throw new Error('empId required');
+    var loc = locateEmployee_(empId);
+    if (!loc) throw new Error('employee not found: ' + empId);
+    var reasonStr = String(reason || '').trim();
+    if (!reasonStr) throw new Error('reason required');
+
+    var lock = LockService.getDocumentLock();
+    if (!lock.tryLock(5000)) throw new Error('could not acquire document lock');
+    try {
+      var rowValues = loc.sheet.getRange(loc.row, 1, 1, loc.sheet.getLastColumn()).getValues()[0];
+      var nameIdx = -1, statusIdx = -1, deptIdx = -1;
+      for (var i = 0; i < loc.headers.length; i++) {
+        var h = String(loc.headers[i]).trim();
+        if (h === canonicalToHeader_(loc.region, 'name')) nameIdx = i;
+        if (h === canonicalToHeader_(loc.region, 'status')) statusIdx = i;
+        if (h === canonicalToHeader_(loc.region, 'dept')) deptIdx = i;
+      }
+      var prevStatus = statusIdx >= 0 ? rowValues[statusIdx] : '';
+      var empName = nameIdx >= 0 ? rowValues[nameIdx] : '';
+      var empDept = deptIdx >= 0 ? rowValues[deptIdx] : '';
+
+      withSilentWrite(function () {
+        // 1. Flip status on source row
+        if (statusIdx >= 0) loc.sheet.getRange(loc.row, statusIdx + 1).setValue('Offboarded');
+
+        // 2. Append a row to Offboarded Resources
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var offSh = ss.getSheetByName(Config.canonicalToTabName('offboarded'));
+        if (offSh) {
+          var offHeaders = offSh.getRange(1, 1, 1, offSh.getLastColumn()).getValues()[0];
+          var newRow = new Array(offHeaders.length).fill('');
+          for (var j = 0; j < offHeaders.length; j++) {
+            var oh = String(offHeaders[j]).trim();
+            if (oh === 'Emp ID' || oh === 'Employee ID') newRow[j] = empId;
+            else if (oh === 'Name' || oh === 'Employee Name') newRow[j] = empName;
+            else if (oh === 'Dept' || oh === 'Department') newRow[j] = empDept;
+            else if (oh === 'DOL' || oh === 'Date of Leaving' || oh === 'Last Working Day' || oh === 'Exit Date') newRow[j] = new Date();
+            else if (oh === 'Reason' || oh === 'Exit Reason' || oh === 'Reason for Leaving') newRow[j] = reasonStr;
+          }
+          offSh.appendRow(newRow);
+        }
+      });
+
+      AuditLog.record({
+        op: 'offboard', empId: empId, field: 'status',
+        oldVal: prevStatus, newVal: 'Offboarded · ' + reasonStr, runId: runId
+      });
+      Log.info(runId, 'employee.offboard', { empId: empId, reason: reasonStr });
+      Data.bustAll();
+      Cache.bust('snapshot:');
+      Log.end(runId, { empId: empId });
+      return { ok: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    Log.error(runId, 'api_offboardEmployee: ' + e.message, { stack: e.stack });
+    Log.end(runId, { status: 'FAIL' });
+    return { ok: false, message: e.message };
+  }
 }
