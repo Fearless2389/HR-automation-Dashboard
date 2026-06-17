@@ -788,4 +788,55 @@
     }).join('');
     return '<table class="data"><thead><tr><th>Emp ID</th><th>Name</th><th>Dept</th><th>Date</th><th>Days</th></tr></thead><tbody>' + body + '</tbody></table>';
   }
+
+function renderFinance(s) {
+  var fin = (s && s.finance) || {};
+  renderFinanceBars_(document.getElementById('finance-projects'), fin.byProject || [], 'project');
+  renderFinanceBars_(document.getElementById('finance-depts'), fin.byDept || [], 'dept');
+  var rEl = document.getElementById('finance-regions');
+  if (rEl) {
+    var byR = fin.byRegion || [];
+    var india = byR.filter(function (r) { return r.key === 'india'; })[0] || { headcount: 0, ctcInr: 0 };
+    var us = byR.filter(function (r) { return r.key === 'us'; })[0] || { headcount: 0, ctcUsd: 0 };
+    rEl.innerHTML = '<div class="card" style="border:1px solid #E4E4E7;">' +
+        '<div class="text-xs font-semibold text-gray-500 mb-2">India</div>' +
+        '<div class="text-2xl font-bold">' + Math.round(india.headcount) + '</div>' +
+        '<div class="text-xs text-gray-500">' + formatINR_(india.ctcInr) + ' total CTC</div>' +
+      '</div>' +
+      '<div class="card" style="border:1px solid #E4E4E7;">' +
+        '<div class="text-xs font-semibold text-gray-500 mb-2">US</div>' +
+        '<div class="text-2xl font-bold">' + Math.round(us.headcount) + '</div>' +
+        '<div class="text-xs text-gray-500">' + formatUSD_(us.ctcUsd) + ' total CTC</div>' +
+      '</div>';
+  }
+}
+function renderFinanceBars_(el, rows, kind) {
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">No data.</div>'; return; }
+  var max = Math.max.apply(null, rows.map(function (r) { return r.ctcInr + r.ctcUsd; }));
+  el.innerHTML = rows.map(function (r) {
+    var pct = max ? ((r.ctcInr + r.ctcUsd) / max) * 100 : 0;
+    var label = esc(r.key) + ' · ' + r.headcount + (r.ctcInr ? ' · ' + formatINR_(r.ctcInr) : '') + (r.ctcUsd ? ' · ' + formatUSD_(r.ctcUsd) : '');
+    return '<div class="fbar" data-drill="' + kind + ':' + esc(r.key) + '"><div class="fbar-fill" style="width:' + pct + '%"></div><div class="fbar-label"><span>' + label + '</span></div></div>';
+  }).join('');
+  el.querySelectorAll('[data-drill]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-drill');
+      var drill = ((state.snapshot && state.snapshot.finance && state.snapshot.finance.drillDown) || {})[key] || [];
+      openFinanceDrill_(key, drill);
+    });
+  });
+}
+function openFinanceDrill_(key, rows) {
+  var body = rows.map(function (r) {
+    return '<tr><td class="font-mono text-xs text-gray-500">' + esc(r.empId) + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.designation || '') + '</td>' +
+      '<td>' + (r.ctcInr ? formatINR_(r.ctcInr) : (r.ctcUsd ? formatUSD_(r.ctcUsd) : '—')) + '</td></tr>';
+  }).join('');
+  openModal('<h3 style="font-size:16px;font-weight:600;margin:0 0 12px;">' + esc(key) + ' · ' + rows.length + ' employees</h3>' +
+    '<table class="data"><thead><tr><th>Emp ID</th><th>Name</th><th>Designation</th><th>CTC</th></tr></thead><tbody>' + body + '</tbody></table>' +
+    '<div class="flex justify-end mt-4"><button id="btn-cancel" class="btn-ghost">Close</button></div>');
+  document.getElementById('btn-cancel').addEventListener('click', closeModal);
+}
+function formatINR_(n) { if (!n) return '₹0'; if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + Math.round(n).toLocaleString('en-IN'); }
+function formatUSD_(n) { if (!n) return '$0'; if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M'; if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K'; return '$' + Math.round(n).toLocaleString('en-US'); }
 </script>
