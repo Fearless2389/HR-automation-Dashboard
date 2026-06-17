@@ -209,15 +209,52 @@
   // ──────────────────────────────────────────────────────────────────────
 
   function renderKpis(s) {
-    var html = (s.kpis || []).map(function (k) {
+    var defs = {
+      headcount: { label: 'Headcount', tip: 'Total active employees (India + US). Excludes Offboarded.' },
+      alerts:    { label: 'Active alerts', tip: 'Sum of critical + warning alerts surfaced on the Alerts tab.' },
+      health:    { label: 'HR Health Score', tip: '4-pillar additive score 0–100. Formula in SOP §4.' },
+      attrition: { label: 'Quarterly attrition', tip: '(Current quarter offboardings) / (avg headcount this quarter).' }
+    };
+    var html = (s.kpis || []).map(function (k, i) {
+      var def = defs[k.id || ''] || { tip: '' };
       return '' +
-        '<div class="kpi">' +
+        '<div class="kpi" data-kpi="' + esc(k.id || ('k' + i)) + '" title="' + esc(def.tip || '') + '">' +
           '<div class="kpi-label">' + esc(k.label) + '</div>' +
           '<div class="kpi-value tone-' + esc(k.tone || 'neutral') + '">' + esc(String(k.value)) + '</div>' +
           '<div class="kpi-hint">' + esc(k.hint || '') + '</div>' +
         '</div>';
     }).join('');
-    document.getElementById('kpis-grid').innerHTML = html;
+    var grid = document.getElementById('kpis-grid');
+    grid.innerHTML = html;
+    grid.querySelectorAll('[data-kpi]').forEach(function (el) {
+      el.addEventListener('click', function () { onKpiClick(el.getAttribute('data-kpi')); });
+    });
+  }
+
+  function onKpiClick(id) {
+    var s = state.snapshot;
+    if (id === 'alerts') { activatePageTab('alerts'); return; }
+    if (id === 'health') {
+      var h = (s && s.health) || {};
+      openModal('<h3 style="font-size:16px;font-weight:600;margin:0 0 12px;">HR Health Score · ' + (h.total || 0) + '</h3>' +
+        '<p class="text-xs text-gray-500 mb-3">Sum of four pillars, each capped at 25 points.</p>' +
+        Object.keys(h.pillars || {}).map(function (k) {
+          return '<div class="flex justify-between text-sm py-1"><span>' + esc(k) + '</span><span class="font-semibold">' + Math.round(h.pillars[k] || 0) + ' / 25</span></div>';
+        }).join('') +
+        '<div class="flex justify-end mt-4"><button id="btn-cancel" class="btn-ghost">Close</button></div>');
+      document.getElementById('btn-cancel').addEventListener('click', closeModal);
+      return;
+    }
+    if (id === 'headcount') {
+      var hc = (s && s.headcount) || {};
+      openModal('<h3 style="font-size:16px;font-weight:600;margin:0 0 12px;">Headcount</h3>' +
+        '<div class="flex justify-between text-sm py-1"><span>India</span><span class="font-semibold">' + (hc.india || 0) + '</span></div>' +
+        '<div class="flex justify-between text-sm py-1"><span>US</span><span class="font-semibold">' + (hc.us || 0) + '</span></div>' +
+        '<div class="flex justify-end mt-4"><button id="btn-cancel" class="btn-ghost">Close</button></div>');
+      document.getElementById('btn-cancel').addEventListener('click', closeModal);
+      return;
+    }
+    if (id === 'attrition') { activatePageTab('overview'); return; }
   }
 
   // ──────────────────────────────────────────────────────────────────────
