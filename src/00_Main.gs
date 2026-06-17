@@ -60,6 +60,9 @@ function onOpen() {
     .addItem('Install Triggers', 'installAllTriggersMenu_')
     .addItem('Uninstall Triggers', 'uninstallAllTriggersMenu_')
     .addItem('Stop Daily Digest', 'stopDailyDigestMenu_')
+    .addSeparator()
+    .addItem('Run Alert Email Engine', 'runAlertEmailEngineMenu_')
+    .addItem('Reset Email Dedup', 'resetEmailDedupMenu_')
     .addToUi();
 }
 
@@ -75,6 +78,19 @@ function stopDailyDigestMenu_() {
     n > 0 ? 'Removed ' + n + ' daily-digest trigger(s). No more emails.' : 'No daily-digest trigger was installed.',
     'HR Automation', 5
   );
+}
+function runAlertEmailEngineMenu_() {
+  if (typeof AlertEmails === 'undefined') return;
+  var result = AlertEmails.runOnce();
+  SpreadsheetApp.getActive().toast(
+    'Sent: ' + result.sent + ' · Skipped dedup: ' + result.skippedDedup,
+    'HR Automation', 5
+  );
+}
+function resetEmailDedupMenu_() {
+  if (typeof AlertEmails === 'undefined') return;
+  var n = AlertEmails.resetDedup();
+  SpreadsheetApp.getActive().toast('Cleared ' + n + ' dedup key(s)', 'HR Automation', 5);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

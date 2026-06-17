@@ -212,7 +212,10 @@ function seedTemplates_() {
      '<p>Hi {{actorName}},</p><p>Confirmation has been approved for <b>{{empName}}</b> ({{empId}}, {{dept}}). DOJ: {{doj}}.</p><p>This is an automated notification from the HR Automation Dashboard.</p>'],
     ['alert.lwdDigest',
      'HR Alert Digest — {{date}}',
-     '<p>Hi HR Team,</p><p>The following alerts are currently active:</p><h3>LWD within {{lwdDays}} days</h3>{{lwdTable}}<h3>Probation confirmation due within {{probDays}} days</h3>{{probTable}}<p>— HR Automation Dashboard</p>']
+     '<p>Hi HR Team,</p><p>The following alerts are currently active:</p><h3>LWD within {{lwdDays}} days</h3>{{lwdTable}}<h3>Probation confirmation due within {{probDays}} days</h3>{{probTable}}<p>— HR Automation Dashboard</p>'],
+    ['alert.perAlert',
+     '{{subject}}',
+     '{{bodyHtml}}']
   ];
   sh.getRange(2, 1, rows.length, 3).setValues(rows);
 }
