@@ -21,7 +21,11 @@ function api_snapshot() {
   return Cache.wrap(API_SNAPSHOT_KEY, API_SNAPSHOT_TTL, function () {
     var emps = Data.allEmployees();
     var alerts = Alerts.all();
-    return {
+    var productivity = Productivity.snapshot();
+    var productivityHistory = {};
+    productivity.all.forEach(function (r) { productivityHistory[r.empId] = r.spark; });
+
+    var partial = {
       generatedAt: new Date().toISOString(),
       generatedAtLabel: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMM yyyy · HH:mm'),
       user: { email: tryEmail_() },
@@ -40,27 +44,35 @@ function api_snapshot() {
       },
       orgNodes: OrgChart.nodesForChart(),
       orgGroups: OrgChart.buildGroups(),
+      finance: Finance.snapshot(),
+      productivity: productivity,
+      productivityHistory: productivityHistory,
       drilldownFilters: {
         regions: ['All'].concat(distinctValues_(emps, '__region')),
         departments: ['All'].concat(distinctValues_(emps, 'dept')),
         reportingManagers: ['All'].concat(distinctValues_(emps, 'rm')),
-        statuses: ['All'].concat(distinctValues_(emps, 'status'))
+        statuses: ['All'].concat(distinctValues_(emps, 'status')),
+        projects: ['All'].concat(distinctValues_(emps, 'project'))
       },
       systemHealth: (typeof SelfMonitor !== 'undefined' && SelfMonitor.collect)
-        ? { ok: true, issues: SelfMonitor.collect() }
-        : { ok: true, issues: [] },
+        ? { ok: true, issues: SelfMonitor.collect() } : { ok: true, issues: [] },
       thresholds: {
         lwdAlertDays: Config.threshold('lwdAlertDays'),
         probationConfirmDays: Config.threshold('probationConfirmDays'),
         probationLengthDays: Config.threshold('probationLengthDays')
       }
     };
+    partial.recommendations = Recommendations.all(partial);
+    return partial;
   });
 }
 
 function api_drilldown(filter) {
   filter = filter || {};
   var emps = Data.allEmployees();
+  var fin = Data.finance();
+  var finByEmp = {};
+  fin.forEach(function (f) { if (f.empId) finByEmp[f.empId] = f; });
   var text = String((filter && filter.text) || '').trim().toLowerCase();
   var out = emps.filter(function (e) {
     if (filter.region && filter.region !== 'All' && e.__region !== filter.region) return false;
@@ -73,7 +85,7 @@ function api_drilldown(filter) {
       if (hay.indexOf(text) === -1) return false;
     }
     return true;
-  }).map(serializeEmployee_);
+  }).map(function (e) { return serializeEmployee_(e, finByEmp); });
   return { count: out.length, rows: out };
 }
 
@@ -90,6 +102,28 @@ function api_runAction(action, empId) {
   }
 }
 
+function api_sendManagerEmail(empId, toEmail) {
+  var runId = Log.start('api_sendManagerEmail', 'webapp');
+  try {
+    if (!empId) throw new Error('empId required');
+    var draft = Productivity.draftManagerEmail(empId);
+    if (!toEmail) {
+      // Caller didn't supply — return draft for preview, do not send.
+      Log.end(runId, { previewed: true });
+      return { ok: true, preview: true, subject: draft.subject, body: draft.body, to: '' };
+    }
+    var result = Email.send('productivity.summary', {
+      bodyHtml: draft.body, subject: draft.subject
+    }, toEmail);
+    Log.end(runId, { sent: result.ok });
+    return { ok: result.ok, message: result.message };
+  } catch (e) {
+    Log.error(runId, 'api_sendManagerEmail: ' + e.message);
+    Log.end(runId, { status: 'FAIL' });
+    return { ok: false, message: e.message };
+  }
+}
+
 function api_currentUser() {
   var email = tryEmail_();
   return { email: email, isAllowed: Config.isAllowed(email) };
@@ -97,7 +131,8 @@ function api_currentUser() {
 
 // ───────── serializers ─────────
 
-function serializeEmployee_(e) {
+function serializeEmployee_(e, finByEmp) {
+  var f = (finByEmp && finByEmp[e.empId]) || {};
   return {
     empId: e.empId,
     name: e.name,
@@ -111,7 +146,8 @@ function serializeEmployee_(e) {
     doj: e.doj ? e.doj.toISOString() : null,
     lwd: e.lwd ? e.lwd.toISOString() : null,
     allocationPct: typeof e.allocationPct === 'number' ? e.allocationPct : null,
-    ctc: typeof e.ctc === 'number' ? e.ctc : null
+    ctc: typeof e.ctc === 'number' ? e.ctc : null,
+    productivity: typeof f.productivity === 'number' ? f.productivity : null
   };
 }
 
