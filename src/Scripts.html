@@ -28,7 +28,7 @@
     userEmail: (__USER__ && __USER__.email) || '',
     activeTab: 'overview',
     alertTab: 'critical',
-    drilldown: { region: 'All', dept: 'All', rm: 'All', status: 'All', rows: [], count: 0 },
+    drilldown: { region: 'All', dept: 'All', rm: 'All', status: 'All', text: '', rows: [], count: 0 },
     manage: { region: 'All', dept: 'All', status: 'All', text: '', rows: [], count: 0 },
     prod:   { region: 'All', dept: 'All', project: 'All', text: '', rows: [] },
     lastUpdated: null,
@@ -56,7 +56,11 @@
 
     // Wire up filter dropdowns
     document.querySelectorAll('[data-filter]').forEach(function (sel) {
-      sel.addEventListener('change', onFilterChange);
+      if (sel.type === 'text') {
+        sel.addEventListener('input', debounce(onFilterChange, 250));
+      } else {
+        sel.addEventListener('change', onFilterChange);
+      }
     });
 
     // Wire up page-level tabs
@@ -473,7 +477,8 @@
         region: state.drilldown.region,
         dept: state.drilldown.dept,
         rm: state.drilldown.rm,
-        status: state.drilldown.status
+        status: state.drilldown.status,
+        text: state.drilldown.text
       });
   }
 
@@ -487,6 +492,7 @@
     var rows = state.drilldown.rows.map(function (e) {
       var statusBadge = 'badge ' + (e.status === 'Confirmed' ? 'badge-ok' : e.status === 'Under Probation' ? 'badge-warning' : 'badge-info');
       return '<tr>' +
+        '<td>' + riskDot(e) + '</td>' +
         '<td class="font-mono text-xs text-gray-500">' + esc(e.empId) + '</td>' +
         '<td class="font-medium">' + esc(e.name) + '</td>' +
         '<td class="text-gray-600">' + esc(e.region) + '</td>' +
@@ -499,7 +505,7 @@
         '</tr>';
     }).join('');
     wrap.innerHTML = '<table class="data">' +
-      '<thead><tr><th>Emp ID</th><th>Name</th><th>Region</th><th>Dept</th><th>Designation</th><th>Reporting Manager</th><th>Status</th><th>DOJ</th><th>LWD</th></tr></thead>' +
+      '<thead><tr><th></th><th>Emp ID</th><th>Name</th><th>Region</th><th>Dept</th><th>Designation</th><th>Reporting Manager</th><th>Status</th><th>DOJ</th><th>LWD</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>';
   }
 
