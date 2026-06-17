@@ -89,7 +89,7 @@ var Triggers = Triggers || {};
 // ──────────────────────────────────────────────────────────────────────────
 
 /** Tabs whose edits should never trigger a dashboard rebuild (would loop). */
-var HANDLER_BLOCKED_TABS = ['Dashboard', 'Logs', 'Changelog', 'QA', 'Org Chart', '_Templates'];
+var HANDLER_BLOCKED_TABS = ['Dashboard', 'Logs', 'Changelog', 'QA', 'Org Chart', '_Templates', 'Audit Log', 'Productivity History'];
 
 function onEditInstallable(e) {
   // Reentrancy guard: skip rebuild's own writes.
@@ -321,26 +321,30 @@ function maybeRunAlertEmails_() {
     var elapsed = nowMs - new Date(lastIso).getTime();
     if (elapsed < 60 * 60 * 1000) return;
   }
+  var runId = Log.start('maybeRunAlertEmails_', 'onSchedule');
   try {
-    AlertEmails.runOnce();
+    var result = AlertEmails.runOnce();
     props.setProperty('alertEmails:lastRunIso', new Date().toISOString());
+    Log.end(runId, { sent: result.sent, skippedDedup: result.skippedDedup });
   } catch (e) {
-    Log.error(Log.start('maybeRunAlertEmails_', 'onSchedule'), 'failed: ' + e.message);
+    Log.error(runId, 'failed: ' + e.message);
+    Log.end(runId, { status: 'FAIL' });
   }
 }
 
 function maybeCaptureMonthlySnapshot_() {
+  var runId = Log.start('maybeCaptureMonthlySnapshot_', 'onSchedule');
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName('Productivity History');
-    if (!sh) return;
+    if (!sh) { Log.end(runId, { skipped: 'no tab' }); return; }
     var ym = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
     // Quick exit: if any row for this month exists, skip.
     var lastRow = sh.getLastRow();
-    if (lastRow < 2) return;
+    if (lastRow < 2) { Log.end(runId, { skipped: 'empty tab' }); return; }
     var monthCol = sh.getRange(2, 2, lastRow - 1, 1).getValues();
     for (var i = 0; i < monthCol.length; i++) {
-      if (String(monthCol[i][0]) === ym) return;
+      if (String(monthCol[i][0]) === ym) { Log.end(runId, { skipped: 'month exists' }); return; }
     }
     // Append a row per employee with current productivity.
     var fin = Data.finance();
@@ -351,7 +355,9 @@ function maybeCaptureMonthlySnapshot_() {
         return [f.empId, ym, Math.round(v * 100) / 100];
       });
     if (rows.length) sh.getRange(lastRow + 1, 1, rows.length, 3).setValues(rows);
+    Log.end(runId, { snapshotMonth: ym, rowsAppended: rows.length });
   } catch (e) {
-    Log.error(Log.start('maybeCaptureMonthlySnapshot_', 'onSchedule'), 'failed: ' + e.message);
+    Log.error(runId, 'failed: ' + e.message);
+    Log.end(runId, { status: 'FAIL' });
   }
 }
