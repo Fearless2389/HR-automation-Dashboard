@@ -277,6 +277,9 @@ function onSchedulePulse() {
       catch (err) { Log.warn(runId, 'api_snapshot warm failed: ' + err.message); }
     }
 
+    maybeRunAlertEmails_();
+    maybeCaptureMonthlySnapshot_();
+
     Log.end(runId, { status: 'OK' });
   } catch (e) {
     Log.error(runId, 'onSchedulePulse failed: ' + e.message, { stack: e.stack });
@@ -302,5 +305,53 @@ function dailyDigest() {
   } catch (e) {
     Log.error(runId, 'dailyDigest failed: ' + e.message, { stack: e.stack });
     Log.end(runId, { status: 'FAIL' });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Pulse helpers — called from onSchedulePulse
+// ──────────────────────────────────────────────────────────────────────────
+
+function maybeRunAlertEmails_() {
+  // Rate-limit: at most once per hour.
+  var props = PropertiesService.getScriptProperties();
+  var lastIso = props.getProperty('alertEmails:lastRunIso');
+  var nowMs = Date.now();
+  if (lastIso) {
+    var elapsed = nowMs - new Date(lastIso).getTime();
+    if (elapsed < 60 * 60 * 1000) return;
+  }
+  try {
+    AlertEmails.runOnce();
+    props.setProperty('alertEmails:lastRunIso', new Date().toISOString());
+  } catch (e) {
+    Log.error(Log.start('maybeRunAlertEmails_', 'onSchedule'), 'failed: ' + e.message);
+  }
+}
+
+function maybeCaptureMonthlySnapshot_() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName('Productivity History');
+    if (!sh) return;
+    var ym = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+    // Quick exit: if any row for this month exists, skip.
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return;
+    var monthCol = sh.getRange(2, 2, lastRow - 1, 1).getValues();
+    for (var i = 0; i < monthCol.length; i++) {
+      if (String(monthCol[i][0]) === ym) return;
+    }
+    // Append a row per employee with current productivity.
+    var fin = Data.finance();
+    var rows = fin
+      .filter(function (f) { return f.empId; })
+      .map(function (f) {
+        var v = typeof f.productivity === 'number' ? f.productivity : 0.75;
+        return [f.empId, ym, Math.round(v * 100) / 100];
+      });
+    if (rows.length) sh.getRange(lastRow + 1, 1, rows.length, 3).setValues(rows);
+  } catch (e) {
+    Log.error(Log.start('maybeCaptureMonthlySnapshot_', 'onSchedule'), 'failed: ' + e.message);
   }
 }
