@@ -45,30 +45,37 @@ var AlertEmails = AlertEmails || {};
     var alerts = Alerts.all();
     var candidates = [].concat(alerts.lwd || [], alerts.probation || []);
 
-    var sent = 0, skippedDedup = 0;
+    var sent = 0, skippedDedup = 0, errored = 0;
     candidates.forEach(function (a) {
       var key = dedupKey_(a);
       if (props.getProperty(key)) { skippedDedup++; return; }
-      var subject = (a.kind === 'LWD' ? (a.daysFromNow < 14 ? '[URGENT] ' : '') : '')
-        + a.kind + ' alert · ' + a.name + ' · ' + a.empId;
-      var html = buildAlertEmailBody_(a);
-      var result = Email.send('alert.perAlert', {
-        empId: a.empId, name: a.name, dept: a.dept,
-        kind: a.kind, daysFromNow: a.daysFromNow,
-        date: a.date ? Utilities.formatDate(a.date, Session.getScriptTimeZone(), 'd MMM yyyy') : '',
-        message: a.message,
-        bodyHtml: html, subject: subject
-      }, recipient);
-      if (result.ok) {
-        props.setProperty(key, new Date().toISOString());
-        sent++;
-      } else {
-        Log.warn(runId, 'send failed for ' + key + ': ' + result.message);
+      try {
+        var isUrgent = (a.kind === 'LWD' && a.daysFromNow < 14)
+          || (a.kind === 'Probation' && a.daysFromNow < 7);
+        var subject = (isUrgent ? '[URGENT] ' : '') + a.kind + ' alert · ' + a.name + ' · ' + a.empId;
+        var html = buildAlertEmailBody_(a);
+        var result = Email.send('alert.perAlert', {
+          empId: a.empId, name: a.name, dept: a.dept,
+          kind: a.kind, daysFromNow: a.daysFromNow,
+          date: a.date ? Utilities.formatDate(a.date, Session.getScriptTimeZone(), 'd MMM yyyy') : '',
+          message: a.message,
+          bodyHtml: html, subject: subject
+        }, recipient);
+        if (result.ok) {
+          props.setProperty(key, new Date().toISOString());
+          sent++;
+        } else {
+          Log.warn(runId, 'send failed for ' + key + ': ' + result.message);
+        }
+      } catch (err) {
+        // Don't let one broken send abort the rest of the queue.
+        errored++;
+        Log.warn(runId, 'exception for ' + key + ': ' + (err && err.message));
       }
     });
 
-    Log.end(runId, { sent: sent, skippedDedup: skippedDedup, recipient: recipient });
-    return { sent: sent, skippedDedup: skippedDedup, skippedNoRecipient: 0 };
+    Log.end(runId, { sent: sent, skippedDedup: skippedDedup, errored: errored, recipient: recipient });
+    return { sent: sent, skippedDedup: skippedDedup, skippedNoRecipient: 0, errored: errored };
   };
 
   ns.resetDedup = function () {
