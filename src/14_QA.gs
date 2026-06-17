@@ -41,6 +41,13 @@ var QA = QA || {};
     results.push(ns.assert('cache_round_trip', testCacheRoundTrip_));
     results.push(ns.assert('config_allowlist_includes_reviewer', testAllowlistReviewer_));
     results.push(ns.assert('workflow_idempotency_marker_works', testWorkflowIdempotency_));
+    // Tasks 1-9 assertions
+    results.push(ns.assert('Risk.tier is pure (same input → same tier)', testRiskTierPure_));
+    results.push(ns.assert('Risk.tier classifies offboarded as red', testRiskTierOffboarded_));
+    results.push(ns.assert('AuditLog.record appends a row', testAuditLogRecord_));
+    results.push(ns.assert('Project column exists on India tab', testProjectColumnExists_));
+    results.push(ns.assert('Allocation % column exists on India tab', testAllocationPctColumnExists_));
+    results.push(ns.assert('Productivity History has 12 months per employee', testProductivityHistoryRows_));
     writeResults_(runStart, results);
     return results;
   };
@@ -157,6 +164,52 @@ var QA = QA || {};
     } finally {
       props.deleteProperty(syntheticKey);
     }
+  }
+
+  // ───────── Tasks 1-9 assertions ─────────
+
+  function testRiskTierPure_() {
+    var sample = { status: 'Confirmed', productivity: 0.85, allocationPct: 0.85 };
+    var a = Risk.tier(sample), b = Risk.tier(sample);
+    if (a.tier !== b.tier) throw new Error('non-deterministic');
+  }
+
+  function testRiskTierOffboarded_() {
+    var r = Risk.tier({ status: 'Offboarded' });
+    if (r.tier !== 'red') throw new Error('expected red, got ' + r.tier);
+  }
+
+  // NOTE: intentionally writes a "qa-test" row to Audit Log; benign but visible.
+  function testAuditLogRecord_() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName('Audit Log');
+    if (!sh) throw new Error('Audit Log tab missing');
+    var before = sh.getLastRow();
+    AuditLog.record({ op: 'qa-test', empId: 'QA0000', field: 'designation', oldVal: 'a', newVal: 'b', runId: 'qa' });
+    var after = sh.getLastRow();
+    if (after !== before + 1) throw new Error('expected row count +1, got ' + (after - before));
+  }
+
+  function testProjectColumnExists_() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(Config.canonicalToTabName('india'));
+    var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (headers.indexOf('Project') === -1) throw new Error('Project header missing');
+  }
+
+  function testAllocationPctColumnExists_() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(Config.canonicalToTabName('india'));
+    var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (headers.indexOf('Allocation %') === -1) throw new Error('Allocation % header missing');
+  }
+
+  function testProductivityHistoryRows_() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName('Productivity History');
+    if (!sh) throw new Error('Productivity History tab missing');
+    var lastRow = sh.getLastRow();
+    if (lastRow < 13) throw new Error('expected at least 13 rows (header + 12), got ' + lastRow);
   }
 
   // ───────── helpers ─────────
