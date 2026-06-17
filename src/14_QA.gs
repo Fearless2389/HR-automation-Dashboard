@@ -169,9 +169,11 @@ var QA = QA || {};
   // ───────── Tasks 1-9 assertions ─────────
 
   function testRiskTierPure_() {
-    var sample = { status: 'Confirmed', productivity: 0.85, allocationPct: 0.85 };
-    var a = Risk.tier(sample), b = Risk.tier(sample);
-    if (a.tier !== b.tier) throw new Error('non-deterministic');
+    // Use a fresh literal for the second call so a hypothetical mutation of
+    // the input wouldn't cause both calls to converge on the same false state.
+    var a = Risk.tier({ status: 'Confirmed', productivity: 0.85, allocationPct: 0.85 });
+    var b = Risk.tier({ status: 'Confirmed', productivity: 0.85, allocationPct: 0.85 });
+    if (a.tier !== b.tier) throw new Error('non-deterministic: a=' + a.tier + ', b=' + b.tier);
   }
 
   function testRiskTierOffboarded_() {
@@ -179,15 +181,22 @@ var QA = QA || {};
     if (r.tier !== 'red') throw new Error('expected red, got ' + r.tier);
   }
 
-  // NOTE: intentionally writes a "qa-test" row to Audit Log; benign but visible.
+  // Writes a "qa-test" row to Audit Log and then deletes it so re-running QA
+  // doesn't accumulate noise. Cleanup is in finally so a failed assertion
+  // still removes the test row.
   function testAuditLogRecord_() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName('Audit Log');
     if (!sh) throw new Error('Audit Log tab missing');
     var before = sh.getLastRow();
-    AuditLog.record({ op: 'qa-test', empId: 'QA0000', field: 'designation', oldVal: 'a', newVal: 'b', runId: 'qa' });
-    var after = sh.getLastRow();
-    if (after !== before + 1) throw new Error('expected row count +1, got ' + (after - before));
+    var after = before;
+    try {
+      AuditLog.record({ op: 'qa-test', empId: 'QA0000', field: 'designation', oldVal: 'a', newVal: 'b', runId: 'qa' });
+      after = sh.getLastRow();
+      if (after !== before + 1) throw new Error('expected row count +1, got ' + (after - before));
+    } finally {
+      if (after > before) sh.deleteRow(after);
+    }
   }
 
   function testProjectColumnExists_() {
