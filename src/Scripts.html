@@ -20,7 +20,7 @@
 
   var POLL_INTERVAL_MS = 5000;
   var ALERT_TABS = ['critical', 'warning', 'lwd', 'probation'];
-  var PAGE_TABS = ['overview', 'alerts', 'org', 'drilldown'];
+  var PAGE_TABS = ['overview', 'alerts', 'alertengine', 'finance', 'productivity', 'manage', 'org', 'drilldown'];
 
   var state = {
     snapshot: (__BOOTSTRAP__ && !__BOOTSTRAP__.error) ? __BOOTSTRAP__ : null,
@@ -29,6 +29,8 @@
     activeTab: 'overview',
     alertTab: 'critical',
     drilldown: { region: 'All', dept: 'All', rm: 'All', status: 'All', rows: [], count: 0 },
+    manage: { region: 'All', dept: 'All', status: 'All', text: '', rows: [], count: 0 },
+    prod:   { region: 'All', dept: 'All', project: 'All', text: '', rows: [] },
     lastUpdated: null,
     pollTimer: null
   };
@@ -63,6 +65,32 @@
         activatePageTab(btn.getAttribute('data-tab'));
       });
     });
+
+    // Manage Employees filters + search
+    ['manage-filter-region','manage-filter-dept','manage-filter-status'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', function (e) {
+        var key = id.split('-').pop(); state.manage[key] = e.target.value; refreshManageTable();
+      });
+    });
+    var manageSearch = document.getElementById('manage-search');
+    if (manageSearch) manageSearch.addEventListener('input', debounce(function (e) {
+      state.manage.text = e.target.value; refreshManageTable();
+    }, 250));
+    var addBtn = document.getElementById('btn-add-employee');
+    if (addBtn) addBtn.addEventListener('click', openAddEmployeeModal);
+
+    // Productivity filters + search
+    ['prod-filter-region','prod-filter-dept','prod-filter-project'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', function (e) {
+        var key = id.split('-').pop(); state.prod[key] = e.target.value; renderProductivityTab(state.snapshot);
+      });
+    });
+    var prodSearch = document.getElementById('prod-search');
+    if (prodSearch) prodSearch.addEventListener('input', debounce(function (e) {
+      state.prod.text = e.target.value; renderProductivityTab(state.snapshot);
+    }, 250));
 
     // Polling
     startPolling();
@@ -132,6 +160,11 @@
     renderAttritionTrend(s);
     renderOrgGroups(s);
     renderDrillDownFilters(s);
+    if (typeof renderRecsAndRaw === 'function') renderRecsAndRaw(s);
+    if (typeof renderFinance === 'function') renderFinance(s);
+    if (typeof renderProductivityTab === 'function') renderProductivityTab(s);
+    renderManageFilters(s);
+    refreshManageTable();
     updateAlertsTabCount(s);
     updateLastUpdatedLabel();
   }
@@ -500,5 +533,202 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
     });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Debounce
+  // ──────────────────────────────────────────────────────────────────────
+
+  function debounce(fn, ms) {
+    var t = null;
+    return function () { var ctx = this, args = arguments; if (t) clearTimeout(t); t = setTimeout(function () { fn.apply(ctx, args); }, ms); };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Modal helpers
+  // ──────────────────────────────────────────────────────────────────────
+
+  function openModal(html) {
+    var ov = document.getElementById('modal-overlay');
+    document.getElementById('modal-content').innerHTML = html;
+    ov.classList.remove('hidden');
+    ov.addEventListener('click', overlayBackdropClick_, { once: true });
+    document.addEventListener('keydown', escClose_);
+  }
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+    document.removeEventListener('keydown', escClose_);
+  }
+  function overlayBackdropClick_(e) { if (e.target.id === 'modal-overlay') closeModal(); }
+  function escClose_(e) { if (e.key === 'Escape') closeModal(); }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Client-side risk dot — mirrors server Risk.tier logic.
+  // Uses independent if-blocks for red rules (accumulate-all, like the server).
+  // Includes the probation amber rule the server has.
+  // ──────────────────────────────────────────────────────────────────────
+
+  function riskDot(emp) {
+    var reasons = [], tier = 'green';
+    var now = new Date();
+    var lwdDays = emp.lwd ? Math.round((new Date(emp.lwd) - now) / 86400000) : null;
+    var doj = emp.doj ? new Date(emp.doj) : null;
+    var probDays = (doj && !isNaN(doj.getTime()) && emp.status === 'Under Probation')
+      ? Math.round((doj.getTime() + 180 * 86400000 - now.getTime()) / 86400000)
+      : null;
+    var prod = typeof emp.productivity === 'number' ? emp.productivity : null;
+    var alloc = typeof emp.allocationPct === 'number' ? emp.allocationPct : null;
+
+    // Red rules (independent, accumulate reasons)
+    if (emp.status === 'Offboarded') { tier='red'; reasons.push('Status: Offboarded'); }
+    if (lwdDays !== null && lwdDays >= 0 && lwdDays < 14) { tier='red'; reasons.push('LWD in '+lwdDays+'d'); }
+    if (prod !== null && prod < 0.50) { tier='red'; reasons.push('Productivity '+prod.toFixed(2)); }
+
+    if (tier !== 'red') {
+      // Amber rules (only if not red)
+      if (lwdDays !== null && lwdDays >= 0 && lwdDays < 45) { tier='amber'; reasons.push('LWD in '+lwdDays+'d'); }
+      if (probDays !== null && probDays < 30) { tier='amber'; reasons.push('Confirmation in '+probDays+'d'); }
+      if (prod !== null && prod < 0.70) { tier='amber'; reasons.push('Productivity '+prod.toFixed(2)); }
+      if (alloc !== null && alloc < 0.40) { tier='amber'; reasons.push('Allocation '+Math.round(alloc*100)+'%'); }
+    }
+    var title = reasons.length ? reasons.join(' · ') : 'Healthy';
+    return '<span class="risk-dot risk-'+tier+'" title="'+esc(title)+'"></span>';
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Manage Employees tab
+  // ──────────────────────────────────────────────────────────────────────
+
+  function renderManageFilters(s) {
+    var f = s.drilldownFilters || {};
+    setOptions('manage-filter-region', f.regions || ['All']);
+    setOptions('manage-filter-dept', f.departments || ['All']);
+    setOptions('manage-filter-status', f.statuses || ['All']);
+  }
+
+  function refreshManageTable() {
+    google.script.run.withSuccessHandler(function (result) {
+      state.manage.rows = (result && result.rows) || [];
+      state.manage.count = (result && result.count) || 0;
+      document.getElementById('manage-count').textContent = String(state.manage.count);
+      var wrap = document.getElementById('manage-table-wrap');
+      if (!state.manage.rows.length) { wrap.innerHTML = '<div class="empty-state">No employees match the current filters.</div>'; return; }
+      var rows = state.manage.rows.map(function (e) {
+        return '<tr>' +
+          '<td>' + riskDot(e) + '</td>' +
+          '<td class="font-mono text-xs text-gray-500">' + esc(e.empId) + '</td>' +
+          '<td class="font-medium">' + esc(e.name) + '</td>' +
+          '<td class="text-gray-600">' + esc(e.region) + '</td>' +
+          '<td class="text-gray-600">' + esc(e.dept) + '</td>' +
+          '<td class="text-gray-600">' + esc(e.designation) + '</td>' +
+          '<td class="text-gray-600">' + esc(e.project || '') + '</td>' +
+          '<td class="text-gray-600">' + (typeof e.allocationPct === 'number' ? Math.round(e.allocationPct * 100) + '%' : '—') + '</td>' +
+          '<td><span class="badge ' + (e.status === 'Confirmed' ? 'badge-ok' : e.status === 'Under Probation' ? 'badge-warning' : 'badge-info') + '">' + esc(e.status) + '</span></td>' +
+          '<td><button class="btn-ghost" data-edit="' + esc(e.empId) + '">Edit</button> ' +
+          '<button class="btn-danger" data-off="' + esc(e.empId) + '">Offboard</button></td>' +
+        '</tr>';
+      }).join('');
+      wrap.innerHTML = '<table class="data"><thead><tr>' +
+        '<th></th><th>Emp ID</th><th>Name</th><th>Region</th><th>Dept</th><th>Designation</th><th>Project</th><th>Alloc</th><th>Status</th><th>Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+      wrap.querySelectorAll('[data-edit]').forEach(function (b) { b.addEventListener('click', function () { openEditEmployeeModal(b.getAttribute('data-edit')); }); });
+      wrap.querySelectorAll('[data-off]').forEach(function (b) { b.addEventListener('click', function () { openOffboardModal(b.getAttribute('data-off')); }); });
+    }).api_drilldown({
+      region: state.manage.region, dept: state.manage.dept, status: state.manage.status, text: state.manage.text
+    });
+  }
+
+  function openEditEmployeeModal(empId) {
+    var emp = state.manage.rows.filter(function (r) { return r.empId === empId; })[0];
+    if (!emp) return;
+    openModal(employeeFormHtml_('Edit ' + emp.name, emp, false));
+    document.getElementById('btn-save-employee').addEventListener('click', function () {
+      var patch = collectFormPatch_();
+      google.script.run.withSuccessHandler(function (result) {
+        if (!result.ok) alert('Save failed: ' + result.message);
+        closeModal(); refreshManageTable();
+      }).api_updateEmployee(empId, patch);
+    });
+    document.getElementById('btn-cancel').addEventListener('click', closeModal);
+  }
+
+  function openAddEmployeeModal() {
+    openModal(employeeFormHtml_('Add Employee', { region: 'india', status: 'Confirmed', project: 'Unassigned' }, true));
+    document.getElementById('btn-save-employee').addEventListener('click', function () {
+      var payload = collectFormPatch_();
+      var region = document.getElementById('field-region').value;
+      payload.region = region;
+      google.script.run.withSuccessHandler(function (result) {
+        if (!result.ok) alert('Add failed: ' + result.message);
+        closeModal(); refreshManageTable();
+      }).api_addEmployee(payload);
+    });
+    document.getElementById('btn-cancel').addEventListener('click', closeModal);
+  }
+
+  function openOffboardModal(empId) {
+    var emp = state.manage.rows.filter(function (r) { return r.empId === empId; })[0];
+    if (!emp) return;
+    openModal('<h3 style="font-size:16px;font-weight:600;margin:0 0 12px;">Offboard ' + esc(emp.name) + '</h3>' +
+      '<p class="text-xs text-gray-500 mb-3">This sets status to Offboarded and appends a row to Offboarded Resources.</p>' +
+      '<label class="modal-label">Reason</label>' +
+      '<input type="text" id="field-reason" class="modal-input" placeholder="e.g. Resignation, end of contract…" />' +
+      '<div class="flex justify-end gap-2 mt-4"><button id="btn-cancel" class="btn-ghost">Cancel</button>' +
+      '<button id="btn-confirm-off" class="btn-danger">Mark Offboarded</button></div>');
+    document.getElementById('btn-cancel').addEventListener('click', closeModal);
+    document.getElementById('btn-confirm-off').addEventListener('click', function () {
+      var reason = document.getElementById('field-reason').value;
+      if (!reason || !reason.trim()) { alert('Reason required'); return; }
+      google.script.run.withSuccessHandler(function (result) {
+        if (!result.ok) alert('Failed: ' + result.message);
+        closeModal(); refreshManageTable();
+      }).api_offboardEmployee(empId, reason);
+    });
+  }
+
+  function employeeFormHtml_(title, emp, isAdd) {
+    function input(id, label, value, type) { return '<div><label class="modal-label">' + label + '</label><input id="' + id + '" type="' + (type||'text') + '" class="modal-input" value="' + esc(value == null ? '' : value) + '" /></div>'; }
+    function select(id, label, options, value) {
+      var opts = options.map(function (o) { return '<option value="' + esc(o) + '"' + (o === value ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
+      return '<div><label class="modal-label">' + label + '</label><select id="' + id + '" class="modal-input">' + opts + '</select></div>';
+    }
+    var statuses = ['Confirmed', 'Under Probation', 'Intern', 'Offboarded'];
+    var depts = ['Engineering','Finance','Operations','HR','Sales'];
+    var projects = ['Apollo','Phoenix','Helios','Atlas','Vega','Orion','Nimbus','Lyra','Unassigned'];
+    return '<h3 style="font-size:16px;font-weight:600;margin:0 0 12px;">' + esc(title) + '</h3>' +
+      (isAdd ? select('field-region','Region',['india','us'], emp.region || 'india') : '<div><label class="modal-label">Region</label><div class="text-sm">' + esc(emp.region) + '</div></div>') +
+      '<div class="modal-section grid grid-cols-2 gap-3">' +
+        input('field-name','Name', emp.name) +
+        select('field-status','Status', statuses, emp.status) +
+        select('field-dept','Department', depts, emp.dept) +
+        input('field-designation','Designation', emp.designation) +
+      '</div>' +
+      '<div class="modal-section grid grid-cols-2 gap-3">' +
+        input('field-rm','Reporting Manager', emp.rm) +
+        input('field-doj','DOJ (YYYY-MM-DD)', emp.doj ? new Date(emp.doj).toISOString().slice(0,10) : '') +
+      '</div>' +
+      '<div class="modal-section grid grid-cols-2 gap-3">' +
+        select('field-project','Project', projects, emp.project) +
+        input('field-allocation','Allocation %', typeof emp.allocationPct === 'number' ? Math.round(emp.allocationPct * 100) : '', 'number') +
+      '</div>' +
+      '<div class="flex justify-end gap-2 mt-4"><button id="btn-cancel" class="btn-ghost">Cancel</button>' +
+      '<button id="btn-save-employee" class="btn-primary">Save</button></div>';
+  }
+
+  function collectFormPatch_() {
+    function val(id) { var el = document.getElementById(id); return el ? el.value : undefined; }
+    var patch = {
+      name: val('field-name'),
+      dept: val('field-dept'),
+      designation: val('field-designation'),
+      status: val('field-status'),
+      rm: val('field-rm'),
+      project: val('field-project')
+    };
+    var alloc = val('field-allocation');
+    if (alloc !== '' && alloc != null) patch.allocationPct = Number(alloc) / 100;
+    var doj = val('field-doj');
+    if (doj) patch.doj = doj;
+    return patch;
   }
 </script>
