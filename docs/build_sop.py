@@ -504,6 +504,21 @@ def section_architecture():
         ["Dashboard / Org Chart / Drill-Down", "Rendered by the script. Don't type into Dashboard."],
     ]
     TABLE(["Tab", "Role"], rows, widths=[4.0, 12.5])
+
+    H2("Web App tabs (Phase 2)")
+    P("Four additional main tabs live in the Web App (not the Sheet): Manage Employees, Finance, Productivity, "
+      "and Alert Engine. Two more helper-style tabs — Audit Log and Productivity History — support those "
+      "primary views.")
+    rows = [
+        ["Manage Employees", "Full employee roster with Add, Edit (side-panel modal), and Offboard flows. "
+         "Writes go through api_addEmployee / api_updateEmployee / api_offboardEmployee."],
+        ["Finance", "Finance & Risk Report metrics pulled from the Finance · Productivity Risk Report tab."],
+        ["Productivity", "Allocation and productivity scores per employee, sourced from RM Data."],
+        ["Alert Engine", "Recommendation rules engine. Shows fired rules; HR can dismiss or action items."],
+        ["Audit Log", "Every web-app write — add, update, offboard — with old vs new values and the actor email."],
+        ["Productivity History", "Snapshot history of allocation trends over time for trend analysis."],
+    ]
+    TABLE(["Tab", "Role"], rows, widths=[4.0, 12.5])
     PAGE_BREAK()
 
 
@@ -597,6 +612,19 @@ def section_hr_use():
             ("—", {"code": True}),
             (" and logs a WARN.", {})])
 
+    H2("Managing employees from the Web App")
+    P("The Manage Employees tab is the fastest way to make individual employee changes without opening the Sheet. "
+      "Click any row to open the side-panel modal — every editable field is there. Save writes directly to the "
+      "India or US source tab via api_updateEmployee and busts the dashboard cache, so the Overview KPIs update "
+      "within the usual ~7 seconds. The Add Employee button at the top right runs the same onboarding flow as the "
+      "Sheet-side bootstrap. Offboarding moves the row to the Offboarded tab and stamps the exit date.")
+    P("The Audit Log tab records every one of those writes: who did it, when, what field changed, and the old vs "
+      "new values. It's append-only — nothing in the UI can delete a row. If you need to investigate a bad edit, "
+      "filter by employee name or actor email. The search bar at the top of the Audit Log (and the same pattern on "
+      "Manage Employees, Drill-Down, and Productivity) does a live client-side filter across all visible columns. "
+      "Risk dots — red / amber / green — appear on Manage Employees and Productivity rows to give an at-a-glance "
+      "posture without opening a modal.")
+
     H2("The Reporting Manager / Org Chart caveat")
     P("The org chart links each row's Reporting Manager value to another row's Employee Name. In the starter "
       "dataset shipped with the assignment, none of those values actually match — so every employee ends up "
@@ -627,6 +655,14 @@ def section_config():
          "Productivity floor and allocation floor. Used by alerts + Health Score productivity pillar."],
         ["health.weights · *  /  health.bands · green / amber",
          "Tune the Health Score weights (default 25 each, sum to 100) and band cutoffs (default 80 / 60)."],
+        ["thresholds · recommendationsCacheSeconds",
+         "How long the Alert Engine's snapshot is cached before the next api_getRecommendations call hits "
+         "the backend again. Default 60. Drop to 10 during development; raise to 300 in stable prod to reduce "
+         "quota usage."],
+        ["email · alertEmailRecipient",
+         "The email address that receives alert notification emails from the Alert Email Engine. Intended for "
+         "HR's own inbox during testing so real employee addresses aren't hit. Leave blank to disable alert "
+         "emails entirely without touching demoMode."],
         ["aliases.<tab> · <canonical>",
          "Comma-separated list of accepted column header names per canonical name (empId, doj, lwd, etc.). "
          "This is what makes column renames safe — add a new alias here when your sheet's headers diverge."],
@@ -677,6 +713,21 @@ def section_troubleshooting():
         ["Web App still shows old data after clasp push",
          "clasp push only updates HEAD code. The deployed URL is pinned to a specific version.",
          "Deploy → Manage Deployments → pencil → New version → Deploy."],
+        ["No recommendations show on Alert Engine tab",
+         "Snapshot is fresh but either no rules fire against current data, OR the snapshot cache hasn't "
+         "busted since the last data change.",
+         "Menu → HR Automation → Rebuild Dashboard to force a fresh snapshot. If rules still don't fire, "
+         "check that the relevant threshold values in _Config actually match the current data state."],
+        ["Audit Log empty after edits",
+         "A mid-write exception prevented the audit entry from being appended. The employee change may or "
+         "may not have landed.",
+         "Check the Logs tab for any api_updateEmployee / api_addEmployee / api_offboardEmployee ERROR rows. "
+         "The error message will show which field write failed and why."],
+        ["Alert emails not sending",
+         "Either _Config.email.alertEmailRecipient is blank (no target address) or email.demoMode is true "
+         "(emails are suppressed globally).",
+         "Menu → HR Automation → Run Alert Email Engine — the toast result will confirm whether an email "
+         "was sent or blocked. Fill in alertEmailRecipient and/or set demoMode to false to enable real sends."],
     ]
     TABLE(["Symptom", "Cause", "Fix"], rows, widths=[4.5, 5.5, 6.5])
     PAGE_BREAK()
@@ -694,9 +745,26 @@ def section_developer():
            "Tailwind v3 Play CDN. The Web App is vanilla JS + Tailwind v2 static CSS. Stick to that for future UI work.")
 
     H2("Project structure")
-    P("17 .gs files, single concern each. Numeric prefixes (00 → 99) are for human navigation; load order doesn't "
+    P("23 .gs files, single concern each. Numeric prefixes (00 → 99) are for human navigation; load order doesn't "
       "matter since all cross-file references happen at call time. Each module uses the same namespace-on-IIFE "
       "pattern — see 03_Cache.gs for a clean example.")
+
+    H3("Phase 2 modules (17 → 22)")
+    rows = [
+        ["17_Recommendations.gs", "Alert Engine rules engine. Evaluates rule definitions against the "
+         "current snapshot and returns fired recommendations for the web app to display."],
+        ["18_Finance.gs", "Reads Finance · Productivity Risk Report tab; exposes api_getFinanceData "
+         "for the Finance tab."],
+        ["19_Productivity.gs", "Reads RM Data allocation columns; exposes api_getProductivityData "
+         "for the Productivity tab."],
+        ["20_AlertEmails.gs", "Sends alert notification emails to _Config.email.alertEmailRecipient. "
+         "Respects demoMode."],
+        ["21_AuditLog.gs", "Appends audit rows on every web-app write (add / update / offboard). "
+         "Exposes api_getAuditLog for the Audit Log tab."],
+        ["22_Risk.gs", "Computes per-employee risk dots (red / amber / green) used by Manage "
+         "Employees and Productivity tab row decorations."],
+    ]
+    TABLE(["File", "Responsibility"], rows, widths=[4.5, 12.0])
 
     H2("Adding a new module")
     NUM("New file under src/, named like XX_NewModule.gs.")
